@@ -55,6 +55,15 @@ class RequestModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class Quoted(Base):
+    __tablename__ = "quoted"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    videoId = Column(String(255), nullable=False)
+    liveId = Column(String(255), nullable=False)
+    quotedAt = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 # Pydantic models
 class QueueItem(BaseModel):
     videoId: str
@@ -166,7 +175,7 @@ async def health_check(session: AsyncSession = Depends(get_session)):
 
 def get_model_by_collection(collection: str):
     """Return the model class for a collection name."""
-    models = {"queue": Queue, "requests": RequestModel}
+    models = {"queue": Queue, "requests": RequestModel, "quoted": Quoted}
     return models.get(collection)
 
 
