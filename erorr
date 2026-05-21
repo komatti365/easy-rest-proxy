@@ -1,0 +1,159 @@
+proxy-1       | INFO:     Started server process [1]
+proxy-1       | INFO:     Waiting for application startup.
+proxy-1       | ERROR:app.main:Failed to initialize database: (pymysql.err.OperationalError) (2003, "Can't connect to MySQL server on 'localhost'")
+proxy-1       | (Background on this error at: https://sqlalche.me/e/20/e3q8)
+proxy-1       | Traceback (most recent call last):
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/aiomysql/connection.py", line 527, in _connect
+proxy-1       |     self._reader, self._writer = await \
+proxy-1       |                                  ^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/asyncio/tasks.py", line 452, in wait_for
+proxy-1       |     return await fut
+proxy-1       |            ^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/aiomysql/connection.py", line 87, in _open_connection
+proxy-1       |     transport, _ = await loop.create_connection(
+proxy-1       |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "uvloop/loop.pyx", line 2043, in create_connection
+proxy-1       |   File "uvloop/loop.pyx", line 2020, in uvloop.loop.Loop.create_connection
+proxy-1       | ConnectionRefusedError: [Errno 111] Connection refused
+proxy-1       |
+proxy-1       | The above exception was the direct cause of the following exception:
+proxy-1       |
+proxy-1       | Traceback (most recent call last):
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 143, in __init__
+proxy-1       |     self._dbapi_connection = engine.raw_connection()
+proxy-1       |                              ^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 3317, in raw_connection
+proxy-1       |     return self.pool.connect()
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+proxy-1       |     return _ConnectionFairy._checkout(self)
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+proxy-1       |     fairy = _ConnectionRecord.checkout(pool)
+proxy-1       |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+proxy-1       |     rec = pool._do_get()
+proxy-1       |           ^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/impl.py", line 177, in _do_get
+proxy-1       |     with util.safe_reraise():
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py", line 121, in __exit__
+proxy-1       |     raise exc_value.with_traceback(exc_tb)
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/impl.py", line 175, in _do_get
+proxy-1       |     return self._create_connection()
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+proxy-1       |     return _ConnectionRecord(self)
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+proxy-1       |     self.__connect()
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+proxy-1       |     with util.safe_reraise():
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py", line 121, in __exit__
+proxy-1       |     raise exc_value.with_traceback(exc_tb)
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+proxy-1       |     self.dbapi_connection = connection = pool._invoke_creator(self)
+proxy-1       |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+proxy-1       |     return dialect.connect(*cargs_tup, **cparams)
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+proxy-1       |     return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/dialects/mysql/aiomysql.py", line 170, in connect
+proxy-1       |     await_only(creator_fn(*arg, **kw)),
+proxy-1       |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 132, in await_only
+proxy-1       |     return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 196, in greenlet_spawn
+proxy-1       |     value = await result
+proxy-1       |             ^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/aiomysql/connection.py", line 74, in _connect
+proxy-1       |     await conn._connect()
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/aiomysql/connection.py", line 563, in _connect
+proxy-1       |     raise OperationalError(
+proxy-1       | pymysql.err.OperationalError: (2003, "Can't connect to MySQL server on 'localhost'")
+proxy-1       |
+proxy-1       | The above exception was the direct cause of the following exception:
+proxy-1       |
+proxy-1       | Traceback (most recent call last):
+proxy-1       |   File "/app/app/main.py", line 141, in startup_event
+proxy-1       |     async with engine.begin() as conn:
+proxy-1       |   File "/usr/local/lib/python3.11/contextlib.py", line 210, in __aenter__
+proxy-1       |     return await anext(self.gen)
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 1068, in begin
+proxy-1       |     async with conn:
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/base.py", line 121, in __aenter__
+proxy-1       |     return await self.start(is_ctxmanager=True)
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/ext/asyncio/engine.py", line 275, in start
+proxy-1       |     await greenlet_spawn(self.sync_engine.connect)
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 201, in greenlet_spawn
+proxy-1       |     result = context.throw(*sys.exc_info())
+proxy-1       |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 3293, in connect
+proxy-1       |     return self._connection_cls(self)
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 145, in __init__
+proxy-1       |     Connection._handle_dbapi_exception_noconnection(
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2448, in _handle_dbapi_exception_noconnection
+proxy-1       |     raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 143, in __init__
+proxy-1       |     self._dbapi_connection = engine.raw_connection()
+proxy-1       |                              ^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 3317, in raw_connection
+proxy-1       |     return self.pool.connect()
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 448, in connect
+proxy-1       |     return _ConnectionFairy._checkout(self)
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 1272, in _checkout
+proxy-1       |     fairy = _ConnectionRecord.checkout(pool)
+proxy-1       |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 712, in checkout
+proxy-1       |     rec = pool._do_get()
+proxy-1       |           ^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/impl.py", line 177, in _do_get
+proxy-1       |     with util.safe_reraise():
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py", line 121, in __exit__
+proxy-1       |     raise exc_value.with_traceback(exc_tb)
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/impl.py", line 175, in _do_get
+proxy-1       |     return self._create_connection()
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 389, in _create_connection
+proxy-1       |     return _ConnectionRecord(self)
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 674, in __init__
+proxy-1       |     self.__connect()
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 900, in __connect
+proxy-1       |     with util.safe_reraise():
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/langhelpers.py", line 121, in __exit__
+proxy-1       |     raise exc_value.with_traceback(exc_tb)
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/pool/base.py", line 896, in __connect
+proxy-1       |     self.dbapi_connection = connection = pool._invoke_creator(self)
+proxy-1       |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/create.py", line 667, in connect
+proxy-1       |     return dialect.connect(*cargs_tup, **cparams)
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 630, in connect
+proxy-1       |     return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/dialects/mysql/aiomysql.py", line 170, in connect
+proxy-1       |     await_only(creator_fn(*arg, **kw)),
+proxy-1       |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 132, in await_only
+proxy-1       |     return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+proxy-1       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 196, in greenlet_spawn
+proxy-1       |     value = await result
+proxy-1       |             ^^^^^^^^^^^^
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/aiomysql/connection.py", line 74, in _connect
+proxy-1       |     await conn._connect()
+proxy-1       |   File "/usr/local/lib/python3.11/site-packages/aiomysql/connection.py", line 563, in _connect
+proxy-1       |     raise OperationalError(
+proxy-1       | sqlalchemy.exc.OperationalError: (pymysql.err.OperationalError) (2003, "Can't connect to MySQL server on 'localhost'")
+proxy-1       | (Background on this error at: https://sqlalche.me/e/20/e3q8)
+proxy-1       |
+proxy-1       | INFO:     Application startup complete.
+proxy-1       | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)

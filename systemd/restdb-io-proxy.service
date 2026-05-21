@@ -1,0 +1,15 @@
+[Unit]
+Description=restdb.io compatibility proxy
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/restdb.io-proxy
+EnvironmentFile=/path/to/restdb.io-proxy/.env
+ExecStart=/path/to/restdb.io-proxy/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
