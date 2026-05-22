@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_, inspect as sql_inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from dotenv import load_dotenv
@@ -36,6 +36,11 @@ engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
 
+# Dynamic collection registry
+AVAILABLE_TABLES: Dict[str, Dict[str, Any]] = {}
+PREDEFINED_MODELS: Dict[str, Any] = {}
+DEFAULT_DYNAMIC_COLUMNS = ["id", "videoId", "created_at"]
+
 
 # Models
 class Queue(Base):
@@ -62,6 +67,13 @@ class Quoted(Base):
     videoId = Column(String(255), nullable=False)
     liveId = Column(String(255), nullable=False)
     quotedAt = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+PREDEFINED_MODELS.update({
+    "queue": Queue,
+    "requests": RequestModel,
+    "quoted": Quoted,
+})
 
 
 # Pydantic models
@@ -145,16 +157,169 @@ def build_filter(query: Dict[str, Any], model) -> Any:
 # Events
 @app.on_event("startup")
 async def startup_event():
-    """Create tables on startup (non-blocking, continues even on error)."""
+    """Create tables on startup and discover available tables."""
     try:
         logger.info(f"Attempting to connect to database at {DB_HOST}:{DB_PORT}/{DB_NAME}")
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables created/verified successfully")
+        await discover_tables()
     except Exception as e:
         logger.warning(f"Database initialization warning (app will continue): {e}")
         logger.debug(f"Startup error details:\n{traceback.format_exc()}")
         # Continue anyway - tables will be created on first request if needed
+
+
+async def discover_tables():
+    """Discover all tables in the database and register them."""
+    try:
+        async with engine.begin() as conn:
+            def _discover(sync_conn):
+                inspector = sql_inspect(sync_conn)
+                tables = inspector.get_table_names()
+                table_info = {}
+
+                for table_name in tables:
+                    columns = inspector.get_columns(table_name)
+                    column_info = [
+                        {
+                            "name": col["name"],
+                            "type": str(col["type"]),
+                            "nullable": col["nullable"],
+                            "primary_key": col.get("primary_key", False),
+                        }
+                        for col in columns
+                    ]
+                    table_info[table_name] = {
+                        "name": table_name,
+                        "columns": column_info,
+                        "column_count": len(column_info),
+                    }
+                return table_info
+
+            table_info = await conn.run_sync(_discover)
+            AVAILABLE_TABLES.clear()
+            AVAILABLE_TABLES.update(table_info)
+            logger.info(f"Discovered {len(AVAILABLE_TABLES)} tables: {list(AVAILABLE_TABLES.keys())}")
+    except Exception as e:
+        logger.warning(f"Failed to discover tables: {e}")
+        logger.debug(f"Discovery error details:\n{traceback.format_exc()}")
+
+
+def is_valid_collection_name(collection: str) -> bool:
+    """Allow only safe collection names to prevent SQL injection."""
+    return bool(re.match(r"^[A-Za-z0-9_]+$", collection))
+
+
+async def create_table_dynamically(collection: str) -> bool:
+    """Create a new table with a default preset schema."""
+    if not is_valid_collection_name(collection):
+        logger.warning(f"Invalid collection name for dynamic creation: {collection}")
+        return False
+
+    try:
+        logger.info(f"Creating table '{collection}' with default schema")
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    f"CREATE TABLE IF NOT EXISTS `{collection}` ("
+                    "`id` INT AUTO_INCREMENT PRIMARY KEY, "
+                    "`videoId` VARCHAR(255) NOT NULL, "
+                    "`created_at` DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL"
+                    ")"
+                )
+            )
+        await discover_tables()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to create table '{collection}': {e}\n{traceback.format_exc()}")
+        return False
+
+
+async def ensure_collection_exists(collection: str) -> Any:
+    """Ensure a collection exists, dynamically creating it if necessary."""
+    if collection in PREDEFINED_MODELS or collection in AVAILABLE_TABLES:
+        return get_model_by_collection(collection)
+
+    if not is_valid_collection_name(collection):
+        return None
+
+    if await create_table_dynamically(collection):
+        return get_model_by_collection(collection)
+    return None
+
+
+def build_dynamic_where_clause(query: Dict[str, Any]) -> (str, Dict[str, Any]):
+    clauses = []
+    params: Dict[str, Any] = {}
+    index = 0
+
+    for field_name, condition in query.items():
+        mapped_field_name = "id" if field_name == "_id" else field_name
+        if mapped_field_name not in DEFAULT_DYNAMIC_COLUMNS:
+            continue
+
+        if isinstance(condition, dict):
+            if "$eq" in condition:
+                index += 1
+                param_name = f"param_{index}"
+                clauses.append(f"`{mapped_field_name}` = :{param_name}")
+                params[param_name] = condition["$eq"]
+            if "$gt" in condition:
+                index += 1
+                param_name = f"param_{index}"
+                clauses.append(f"`{mapped_field_name}` > :{param_name}")
+                params[param_name] = condition["$gt"]
+            if "$lt" in condition:
+                index += 1
+                param_name = f"param_{index}"
+                clauses.append(f"`{mapped_field_name}` < :{param_name}")
+                params[param_name] = condition["$lt"]
+            if "$gte" in condition:
+                index += 1
+                param_name = f"param_{index}"
+                clauses.append(f"`{mapped_field_name}` >= :{param_name}")
+                params[param_name] = condition["$gte"]
+            if "$lte" in condition:
+                index += 1
+                param_name = f"param_{index}"
+                clauses.append(f"`{mapped_field_name}` <= :{param_name}")
+                params[param_name] = condition["$lte"]
+            if "$in" in condition and isinstance(condition["$in"], list):
+                index += 1
+                param_name = f"param_{index}"
+                clauses.append(f"`{mapped_field_name}` IN :{param_name}")
+                params[param_name] = tuple(condition["$in"])
+            if "$nin" in condition and isinstance(condition["$nin"], list):
+                index += 1
+                param_name = f"param_{index}"
+                clauses.append(f"`{mapped_field_name}` NOT IN :{param_name}")
+                params[param_name] = tuple(condition["$nin"])
+            if "$ne" in condition:
+                index += 1
+                param_name = f"param_{index}"
+                clauses.append(f"`{mapped_field_name}` != :{param_name}")
+                params[param_name] = condition["$ne"]
+        else:
+            index += 1
+            param_name = f"param_{index}"
+            clauses.append(f"`{mapped_field_name}` = :{param_name}")
+            params[param_name] = condition
+
+    return " AND ".join(clauses), params
+
+
+def build_dynamic_order_by(options: Dict[str, Any]) -> str:
+    orderby = options.get("$orderby", {})
+    clauses = []
+    for field_name, direction in orderby.items():
+        mapped_field_name = "id" if field_name == "_id" else field_name
+        if mapped_field_name in DEFAULT_DYNAMIC_COLUMNS:
+            direction_str = "DESC" if direction == -1 else "ASC"
+            clauses.append(f"`{mapped_field_name}` {direction_str}")
+    if clauses:
+        return "ORDER BY " + ", ".join(clauses)
+    return ""
 
 
 # Health check
@@ -174,9 +339,14 @@ async def health_check(session: AsyncSession = Depends(get_session)):
 # ============================================================
 
 def get_model_by_collection(collection: str):
-    """Return the model class for a collection name."""
-    models = {"queue": Queue, "requests": RequestModel, "quoted": Quoted}
-    return models.get(collection)
+    """Return the model class or dynamic table name for a collection."""
+    if collection in PREDEFINED_MODELS:
+        return PREDEFINED_MODELS[collection]
+
+    if collection in AVAILABLE_TABLES:
+        return collection
+
+    return None
 
 
 @app.get("/rest/{collection}")
@@ -187,56 +357,93 @@ async def get_collection(
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
-    """GET /rest/<collection> - Get list with optional MongoDB query and header options."""
+    """GET /rest/<collection> - Get list with optional MongoDB query and header options.
+
+    Automatically creates a default table for unknown collections.
+    """
     try:
         model = get_model_by_collection(collection)
         if not model:
-            raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
-        
-        # Parse query and options
+            model = await ensure_collection_exists(collection)
+            if not model:
+                raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
+
         query_obj = parse_mongodb_query(q)
         options_obj = parse_header_options(h)
-        
+
         logger.debug(f"GET /rest/{collection}: q={query_obj}, h={options_obj}")
-        
-        # Build base query
+
+        if isinstance(model, str):
+            # Generic dynamic table handling
+            if not is_valid_collection_name(collection):
+                raise HTTPException(status_code=400, detail="Invalid collection name")
+
+            where_clause = ""
+            params: Dict[str, Any] = {}
+            if query_obj:
+                where_clause, params = build_dynamic_where_clause(query_obj)
+                if where_clause:
+                    where_clause = f"WHERE {where_clause}"
+
+            order_by = build_dynamic_order_by(options_obj)
+            limit = options_obj.get("$max")
+            skip = options_obj.get("$skip")
+
+            sql = f"SELECT * FROM `{collection}` {where_clause} {order_by}"
+            if limit is not None:
+                sql += f" LIMIT :__limit"
+                params["__limit"] = int(limit)
+            if skip:
+                if limit is None:
+                    sql += " LIMIT 18446744073709551615"
+                sql += f" OFFSET :__offset"
+                params["__offset"] = int(skip)
+
+            result = await session.execute(text(sql), params)
+            rows = result.mappings().all()
+            fields = options_obj.get("$fields", {})
+            if "_id" in fields:
+                fields["id"] = fields.pop("_id")
+
+            items = []
+            for row in rows:
+                obj = {"_id": str(row.get("id"))}
+                for key, value in row.items():
+                    if key == "id":
+                        continue
+                    if not fields or key in fields:
+                        obj[key] = value
+                items.append(obj)
+            return items
+
+        # Predefined model handling
         stmt = select(model)
-        
-        # Apply filters
         if query_obj:
             filter_clause = build_filter(query_obj, model)
             if filter_clause is not None:
                 stmt = stmt.where(filter_clause)
-        
-        # Apply ordering (from $orderby in options)
+
         orderby = options_obj.get("$orderby", {})
         for field_name, direction in orderby.items():
-            # Map _id to id (restdb.io compatibility)
             mapped_field_name = "id" if field_name == "_id" else field_name
             field = getattr(model, mapped_field_name, None)
             if field:
-                if direction == -1:
-                    stmt = stmt.order_by(field.desc())
-                else:
-                    stmt = stmt.order_by(field.asc())
-        
-        # Apply paging
+                stmt = stmt.order_by(field.desc() if direction == -1 else field.asc())
+
         skip = options_obj.get("$skip", 0)
         limit = options_obj.get("$max", None)
         if skip:
             stmt = stmt.offset(skip)
         if limit:
             stmt = stmt.limit(limit)
-        
+
         result = await session.execute(stmt)
         rows = result.scalars().all()
-        
-        # Build response with $fields filtering
+
         fields = options_obj.get("$fields", {})
-        # Map _id in fields to id
         if "_id" in fields:
             fields["id"] = fields.pop("_id")
-        
+
         items = []
         for row in rows:
             obj = {"_id": str(row.id)}
@@ -245,7 +452,7 @@ async def get_collection(
                     if not fields or col.name in fields:
                         obj[col.name] = getattr(row, col.name)
             items.append(obj)
-        
+
         return items
     except HTTPException:
         raise
@@ -265,15 +472,33 @@ async def get_collection_item(
     try:
         model = get_model_by_collection(collection)
         if not model:
-            raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
-        
+            model = await ensure_collection_exists(collection)
+            if not model:
+                raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
+
+        if isinstance(model, str):
+            if not is_valid_collection_name(collection):
+                raise HTTPException(status_code=400, detail="Invalid collection name")
+
+            stmt = text(f"SELECT * FROM `{collection}` WHERE `id` = :id")
+            result = await session.execute(stmt, {"id": int(item_id)})
+            row = result.mappings().first()
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Document not found: {item_id}")
+
+            obj = {"_id": str(row["id"])}
+            for key, value in row.items():
+                if key != "id":
+                    obj[key] = value
+            return obj
+
         stmt = select(model).where(model.id == int(item_id))
         result = await session.execute(stmt)
         row = result.scalars().first()
-        
+
         if not row:
             raise HTTPException(status_code=404, detail=f"Document not found: {item_id}")
-        
+
         obj = {"_id": str(row.id)}
         for col in row.__table__.columns:
             if col.name != "id":
