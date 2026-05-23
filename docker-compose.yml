@@ -1,37 +1,19 @@
 version: "3.8"
-
-secrets:
-  mysql_root_password:
-    file: /opt/selfdev/secret/mysql_root_password.txt
-  db_name:
-    file: /opt/selfdev/secret/db_name.txt
-  db_user:
-    file: /opt/selfdev/secret/db_user.txt
-  db_password:
-    file: /opt/selfdev/secret/db_password.txt
-  proxy_api_key:
-    file: /opt/selfdev/secret/shared_api_key.txt
-
 services:
   mariadb:
     image: mariadb:11
     restart: unless-stopped
     environment:
-      - MYSQL_ROOT_PASSWORD_FILE=/run/secrets/mysql_root_password
-      - MYSQL_DATABASE_FILE=/run/secrets/db_name
-      - MYSQL_USER_FILE=/run/secrets/db_user
-      - MYSQL_PASSWORD_FILE=/run/secrets/db_password
-    secrets:
-      - mysql_root_password
-      - db_name
-      - db_user
-      - db_password
+      - MYSQL_ROOT_PASSWORD=root_pass
+      - MYSQL_DATABASE=restdb_proxy
+      - MYSQL_USER=restdb_user
+      - MYSQL_PASSWORD=restdb_pass
     ports:
       - "3306:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$(cat /run/secrets/mysql_root_password)"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot_pass"]
       interval: 5s
       timeout: 10s
       retries: 10
@@ -44,9 +26,7 @@ services:
     environment:
       - PMA_HOST=mariadb
       - PMA_USER=root
-      - PMA_PASSWORD_FILE=/run/secrets/mysql_root_password
-    secrets:
-      - mysql_root_password
+      - PMA_PASSWORD=root_pass
     depends_on:
       - mariadb
 
@@ -55,20 +35,16 @@ services:
     restart: unless-stopped
     ports:
       - "8888:8000"
+    env_file:
+      - .env
     environment:
-      - PROXY_API_KEY_FILE=/run/secrets/proxy_api_key
-      - DB_USER_FILE=/run/secrets/db_user
-      - DB_PASSWORD_FILE=/run/secrets/db_password
-      - DB_NAME_FILE=/run/secrets/db_name
-      - DB_HOST=mariadb
-      - DB_PORT=3306
-    secrets:
-      - proxy_api_key
-      - db_user
-      - db_password
-      - db_name
-    depends_on:
-      - mariadb
+      - PROXY_API_KEY=${PROXY_API_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+      - DB_USER=${DB_USER:-restdb_user}
+      - DB_PASSWORD=${DB_PASSWORD:-restdb_pass}
+      - DB_HOST=${DB_HOST:-mariadb}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME:-restdb_proxy}
 
 volumes:
   mariadb_data:
