@@ -19,13 +19,26 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 # Configuration
-PROXY_API_KEY = os.getenv("PROXY_API_KEY")
-DATABASE_URL = os.getenv("DATABASE_URL")
-DB_USER = os.getenv("DB_USER", "restdb_user")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "restdb_pass")
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = os.getenv("DB_PORT", "3306")
-DB_NAME = os.getenv("DB_NAME", "restdb_proxy")
+def get_env_or_file(env_var, default=None):
+    """Get value from environment variable, or from a file if {env_var}_FILE is set."""
+    file_env_var = f"{env_var}_FILE"
+    if file_env_var in os.environ:
+        file_path = os.environ[file_env_var]
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except Exception as e:
+            logger.error(f"Failed to read secret from {file_path}: {e}")
+            return default
+    return os.getenv(env_var, default)
+
+PROXY_API_KEY = get_env_or_file("PROXY_API_KEY")
+DATABASE_URL = get_env_or_file("DATABASE_URL")
+DB_USER = get_env_or_file("DB_USER", "restdb_user")
+DB_PASSWORD = get_env_or_file("DB_PASSWORD", "restdb_pass")
+DB_HOST = get_env_or_file("DB_HOST", "localhost")
+DB_PORT = get_env_or_file("DB_PORT", "3306")
+DB_NAME = get_env_or_file("DB_NAME", "restdb_proxy")
 
 # Build database URL if not provided
 if not DATABASE_URL:
