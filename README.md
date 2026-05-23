@@ -10,7 +10,7 @@ Run (development):
 # install deps
 python -m pip install -r requirements.txt
 # run (assumes MariaDB on localhost:3306)
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8888
 ```
 
 Environment: copy `.env.example` to `.env` and set MariaDB connection details.
@@ -52,30 +52,35 @@ cd restdb.io-proxy
 docker compose up --build -d
 ```
 
-This will build the `proxy` image and start `mariadb`, `phpmyadmin`, and `proxy` services. Secrets will be loaded from the `secrets/` directory.
+This will build the `proxy` image and start `mariadb`, `phpmyadmin`, and `proxy` services. The `.env` file (if present) will be loaded into the `proxy` container via `env_file`.
 
-Security & Environment variables
+Environment variables
 
-To prevent sensitive information from appearing in plain text (e.g., in Portainer's management screen), this project uses **Docker Secrets** instead of direct environment variables in Docker Compose.
+You can configure the proxy with environment variables. Copy `.env.example` to `.env` and set the values, or pass variables directly to `docker compose`.
 
-You can configure these secrets by editing the text files inside the `secrets/` directory before running `docker compose up`. 
-
-Available secrets in the `secrets/` directory:
-- `proxy_api_key.txt` - optional API key to require clients supply `x-apikey` header.
-- `mysql_root_password.txt` - MariaDB root password.
-- `db_user.txt` - MariaDB username (default: `restdb_user`).
-- `db_password.txt` - MariaDB password (default: `restdb_pass`).
-- `db_name.txt` - MariaDB database name (default: `restdb_proxy`).
+Important variables (see `.env.example`):
+- `PROXY_API_KEY` - optional API key to require clients supply `x-apikey` header.
+- `DATABASE_URL` - optional full database URL (overrides host/port/user/password/db).
+- `DB_USER` - MariaDB username (default: `restdb_user` when using compose).
+- `DB_PASSWORD` - MariaDB password (default: `restdb_pass` when using compose).
+- `DB_HOST` - MariaDB hostname (default: `mariadb` when using compose).
+- `DB_PORT` - MariaDB port (default: `3306`).
+- `DB_NAME` - MariaDB database name (default: `restdb_proxy`).
 
 Examples
 
-Update the secrets (recommended):
+Use a `.env` file (recommended):
 
 ```bash
-# edit files in secrets/ directory to set API key or credentials
-echo "my_secret_api_key" > secrets/proxy_api_key.txt
-echo "my_secure_root_password" > secrets/mysql_root_password.txt
+cp .env.example .env
+# edit .env to set PROXY_API_KEY or database credentials
 docker compose up --build -d
+```
+
+Pass variables inline:
+
+```bash
+PROXY_API_KEY=secret docker compose up --build -d
 ```
 
 phpMyAdmin (GUI for database management)
@@ -99,7 +104,7 @@ Health check
 The proxy provides a `/health` endpoint (no API key required) to check database connectivity:
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8888/health
 ```
 
 Response (success):
@@ -127,6 +132,7 @@ The proxy implements a high-level of compatibility with restdb.io REST API. Supp
 **Collections**
 - `/rest/queue` - Generic REST endpoint for queue collection
 - `/rest/requests` - Generic REST endpoint for requests collection
+- `/rest/config` - Generic REST endpoint for config collection (key/value settings)
 - Legacy endpoints `/queue`, `/requests` supported for backward compatibility
 
 **MongoDB-like Queries** (via `?q={}` parameter)
@@ -142,7 +148,7 @@ The proxy implements a high-level of compatibility with restdb.io REST API. Supp
 Example:
 ```bash
 curl -H "x-apikey: secret" \
-  "http://localhost:8000/rest/queue?q={\"priority\":true}"
+  "http://localhost:8888/rest/queue?q={\"priority\":true}"
 ```
 
 **Header Options** (via `?h={}` parameter)
@@ -154,7 +160,7 @@ curl -H "x-apikey: secret" \
 Example:
 ```bash
 curl -H "x-apikey: secret" \
-  "http://localhost:8000/rest/queue?h={\"$orderby\":{\"id\":-1},\"$max\":10}"
+  "http://localhost:8888/rest/queue?h={\"$orderby\":{\"id\":-1},\"$max\":10}"
 ```
 
 **Metadata API**
@@ -208,7 +214,7 @@ If phpMyAdmin cannot connect, ensure:
 
 Use the health endpoint:
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8888/health
 ```
 
 Or test MariaDB directly:
