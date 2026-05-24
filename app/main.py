@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -372,6 +373,10 @@ async def post_collection(
                 created.append(obj)
         
         return created
+    except IntegrityError as e:
+        logger.warning(f"Integrity error in POST /rest/{collection}: {e}")
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=f"Database integrity error (e.g., missing required field or duplicate): {e.orig}")
     except HTTPException:
         raise
     except Exception as e:
@@ -415,6 +420,10 @@ async def put_collection_item(
             if col.name != "id":
                 obj[col.name] = getattr(db_item, col.name)
         return obj
+    except IntegrityError as e:
+        logger.warning(f"Integrity error in PUT /rest/{collection}/{item_id}: {e}")
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=f"Database integrity error: {e.orig}")
     except HTTPException:
         raise
     except Exception as e:
@@ -458,6 +467,10 @@ async def patch_collection_item(
             if col.name != "id":
                 obj[col.name] = getattr(db_item, col.name)
         return obj
+    except IntegrityError as e:
+        logger.warning(f"Integrity error in PATCH /rest/{collection}/{item_id}: {e}")
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=f"Database integrity error: {e.orig}")
     except HTTPException:
         raise
     except Exception as e:
