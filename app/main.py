@@ -695,3 +695,56 @@ async def delete_quote_compat(
 ):
     """DELETE /quote/{item_id} - backward compatibility for /rest/quote/{item_id}"""
     return await delete_collection_item("quote", item_id, _=_, session=session)
+
+
+@app.get("/config")
+async def get_config_compat(
+    q: Optional[str] = None,
+    h: Optional[str] = None,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """GET /config - backward compatibility for /rest/config"""
+    return await get_collection("config", q=q, h=h, _=_, session=session)
+
+
+@app.post("/config", status_code=201)
+async def post_config_compat(
+    request: Request,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """POST /config - backward compatibility for /rest/config"""
+    return await post_collection("config", request=request, _=_, session=session)
+
+
+@app.put("/config/{item_id}")
+async def put_config_compat(
+    item_id: str,
+    request: Request,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """PUT /config/{item_id} - backward compatibility for /rest/config/{item_id}"""
+    return await put_collection_item("config", item_id, request=request, _=_, session=session)
+
+
+@app.patch("/config/{item_id}")
+async def patch_config_compat(
+    item_id: str,
+    request: Request,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """PATCH /config/{item_id} - backward compatibility for /rest/config/{item_id}"""
+    return await patch_collection_item("config", item_id, request=request, _=_, session=session)
+
+
+@app.delete("/config/{item_id}")
+async def delete_config_compat(
+    item_id: str,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """DELETE /config/{item_id} - backward compatibility for /rest/config/{item_id}"""
+    return await delete_collection_item("config", item_id, _=_, session=session)
