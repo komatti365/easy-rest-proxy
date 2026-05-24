@@ -1,39 +1,44 @@
-restdb.io compatibility proxy
+restdb.io 互換プロキシ
 
-FastAPI-based proxy that implements a subset of restdb.io REST behavior used by the project.
+STSenを運営するにあたって、 restdb.io のレート制限にむかついたのでRESTサブセットを実装したFastAPIベースのプロキシです。
 
-Backends: MariaDB (via SQLAlchemy + aiomysql)
+バックエンドにはMariaDB (SQLAlchemy + aiomysql 経由)を使用し、AIでバイブコーディンングしました。
 
-Run (development):
+故にこのリポジトリはAIで生成されたコードしかありません。
+
+MITで公開してますが、国のルールによっては著作権が認められない場所もあるかと思いますが、その場合このソースコードはパブリックドメインとして扱います。
+(勢いで作ったので別にMIT継承しなくてもいいです。私は怒りません。)
+
+実行 (開発環境):
 
 ```bash
-# install deps
+# 依存関係のインストール
 python -m pip install -r requirements.txt
-# run (assumes MariaDB on localhost:3306)
+# 実行 (localhost:3306 で MariaDB が稼働していることを想定)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8888
 ```
 
-Environment: copy `.env.example` to `.env` and set MariaDB connection details.
+環境設定: `.env.example` を `.env` にコピーし、MariaDB の接続情報を設定してください。
 
-Linux: Quick install and run
- - Copy `.env.example` to `.env` and edit values as needed.
- - Create a virtualenv, install deps, and run the server:
+Linux: クイックインストールと実行
+ - `.env.example` を `.env` にコピーし、必要に応じて値を編集します。
+ - 仮想環境を作成し、依存関係をインストールして、サーバーを実行します:
 
 ```bash
 cd restdb.io-proxy
 ./run.sh
 ```
 
-`run.sh` creates a `.venv` in the workspace, installs dependencies and starts the app (development). To run without creating the venv again, use:
+`run.sh` はワークスペース内に `.venv` を作成し、依存関係をインストールしてアプリを起動します（開発環境）。仮想環境を再作成せずに実行するには、以下を使用します:
 
 ```bash
 cd restdb.io-proxy
 ./start.sh
 ```
 
-Systemd (example)
+Systemd (例)
 
-Create a unit at `/etc/systemd/system/restdb-io-proxy.service` using the template in `systemd/restdb-io-proxy.service`, then enable and start the service:
+`systemd/restdb-io-proxy.service` のテンプレートを使用して `/etc/systemd/system/restdb-io-proxy.service` にユニットを作成し、サービスを有効化して開始します:
 
 ```bash
 sudo cp restdb.io-proxy/systemd/restdb-io-proxy.service /etc/systemd/system/
@@ -41,195 +46,195 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now restdb-io-proxy.service
 ```
 
-Adjust `WorkingDirectory` and `EnvironmentFile` in the unit to match your installation paths.
+インストールパスに合わせて、ユニット内の `WorkingDirectory` と `EnvironmentFile` を調整してください。
 
-Docker (recommended for remote or reproducible deployment)
+Docker (リモートまたは再現可能なデプロイに推奨)
 
-Build and start the proxy with MariaDB and phpMyAdmin using Docker Compose:
+Docker Compose を使用して、MariaDB と phpMyAdmin と共にプロキシをビルドして起動します:
 
 ```bash
 cd restdb.io-proxy
 docker compose up --build -d
 ```
 
-This will build the `proxy` image and start `mariadb`, `phpmyadmin`, and `proxy` services. The `.env` file (if present) will be loaded into the `proxy` container via `env_file`.
+これにより `proxy` イメージがビルドされ、`mariadb`、`phpmyadmin`、および `proxy` サービスが開始されます。`.env` ファイルが存在する場合、`env_file` を介して `proxy` コンテナに読み込まれます。
 
-Environment variables
+環境変数
 
-You can configure the proxy with environment variables. Copy `.env.example` to `.env` and set the values, or pass variables directly to `docker compose`.
+環境変数を使用してプロキシを設定できます。`.env.example` を `.env` にコピーして値を設定するか、`docker compose` に直接変数を渡します。
 
-Important variables (see `.env.example`):
-- `PROXY_API_KEY` - optional API key to require clients supply `x-apikey` header.
-- `DATABASE_URL` - optional full database URL (overrides host/port/user/password/db).
-- `DB_USER` - MariaDB username (default: `restdb_user` when using compose).
-- `DB_PASSWORD` - MariaDB password (set in `.env` or external secret store).
-- `DB_HOST` - MariaDB hostname (default: `mariadb` when using compose).
-- `DB_PORT` - MariaDB port (default: `3306`).
-- `DB_NAME` - MariaDB database name (default: `restdb_proxy`).
+重要な変数 (詳細は `.env.example` を参照):
+- `PROXY_API_KEY` - クライアントに `x-apikey` ヘッダーの提供を要求するためのオプションの API キー。
+- `DATABASE_URL` - オプションの完全なデータベース URL (ホスト/ポート/ユーザー/パスワード/DB を上書きします)。
+- `DB_USER` - MariaDB ユーザー名 (Compose を使用する場合のデフォルト: `restdb_user`)。
+- `DB_PASSWORD` - MariaDB パスワード (`.env` または外部のシークレットストアで設定)。
+- `DB_HOST` - MariaDB ホスト名 (Compose を使用する場合のデフォルト: `mariadb`)。
+- `DB_PORT` - MariaDB ポート (デフォルト: `3306`)。
+- `DB_NAME` - MariaDB データベース名 (デフォルト: `restdb_proxy`)。
 
-Examples
+例
 
-Use a `.env` file (recommended):
+`.env` ファイルの使用 (推奨):
 
 ```bash
 cp .env.example .env
-# edit .env to set PROXY_API_KEY or database credentials
+# .env を編集して PROXY_API_KEY またはデータベースの認証情報を設定
 docker compose up --build -d
 ```
 
-Pass variables inline:
+インラインで変数を渡す:
 
 ```bash
 PROXY_API_KEY=secret docker compose up --build -d
 ```
 
-phpMyAdmin (GUI for database management)
+phpMyAdmin (データベース管理用 GUI)
 
-When using `docker compose up`, phpMyAdmin is automatically started and accessible at:
+`docker compose up` を使用すると、phpMyAdmin が自動的に開始され、以下でアクセスできます:
 **http://localhost:8081**
 
-Default credentials (set in docker-compose.yml if not overridden by environment variables):
-- Server: `mariadb`
-- Username: `root`
-- Password: set via `PMA_PASSWORD`
+デフォルトの認証情報 (環境変数で上書きされていない場合、docker-compose.yml で設定):
+- サーバー: `mariadb`
+- ユーザー名: `root`
+- パスワード: `PMA_PASSWORD` で設定
 
-Use this GUI to:
-- Browse all tables (queue and requests)
-- Create, edit, or delete data manually
-- Run raw SQL queries
-- Monitor database operations
+この GUI を使用して以下の操作が可能です:
+- すべてのテーブルの閲覧 (queue と requests)
+- データの手動作成、編集、削除
+- 生の SQL クエリの実行
+- データベースの操作の監視
 
-Health check
+ヘルスチェック
 
-The proxy provides a `/health` endpoint (no API key required) to check database connectivity:
+プロキシはデータベース接続を確認するための `/health` エンドポイントを提供します (API キー不要):
 
 ```bash
 curl http://localhost:8888/health
 ```
 
-Response (success):
+レスポンス (成功):
 ```json
 {"status":"ok","redis":"connected"}
 ```
 
-Response (error):
+レスポンス (エラー):
 ```json
 {"status":"error","redis":"failed","error":"connection error details"}
 ```
 
-Use this endpoint in monitoring/alerting systems.
-restdb.io API Compatibility
+このエンドポイントは、監視/アラートシステムで使用してください。
+restdb.io API の互換性
 
-The proxy implements a high-level of compatibility with restdb.io REST API. Supported endpoints and features:
+プロキシは restdb.io REST API と高いレベルで互換性を実装しています。サポートされているエンドポイントと機能は以下の通りです:
 
-**Supported HTTP Methods**
-- GET - retrieve documents
-- POST - create documents
-- PUT - replace entire document
-- PATCH - partial update
-- DELETE - delete documents
+**サポートされている HTTP メソッド**
+- GET - ドキュメントの取得
+- POST - ドキュメントの作成
+- PUT - ドキュメント全体の置換
+- PATCH - 部分的な更新
+- DELETE - ドキュメントの削除
 
-**Collections**
-- `/rest/queue` - Generic REST endpoint for queue collection
-- `/rest/requests` - Generic REST endpoint for requests collection
-- `/rest/config` - Generic REST endpoint for config collection (key/value settings)
-- Legacy endpoints `/queue`, `/requests` supported for backward compatibility
+**コレクション**
+- `/rest/queue` - queue コレクション用の汎用 REST エンドポイント
+- `/rest/requests` - requests コレクション用の汎用 REST エンドポイント
+- `/rest/config` - config コレクション用の汎用 REST エンドポイント (キー/値の設定)
+- 後方互換性のためにレガシーエンドポイント `/queue`, `/requests` をサポート
 
-**MongoDB-like Queries** (via `?q={}` parameter)
-- `$eq` - equals
-- `$gt` - greater than
-- `$lt` - less than
-- `$gte` - greater than or equal
-- `$lte` - less than or equal
-- `$in` - in array
-- `$nin` - not in array
-- `$ne` - not equal
+**MongoDB 形式のクエリ** (`?q={}` パラメータ経由)
+- `$eq` - 等しい
+- `$gt` - より大きい
+- `$lt` - より小さい
+- `$gte` - 以上
+- `$lte` - 以下
+- `$in` - 配列に含まれる
+- `$nin` - 配列に含まれない
+- `$ne` - 等しくない
 
-Example:
+例:
 ```bash
 curl -H "x-apikey: secret" \
   "http://localhost:8888/rest/queue?q={\"priority\":true}"
 ```
 
-**Header Options** (via `?h={}` parameter)
-- `$orderby` - sort fields: `{"priority": 1, "id": -1}` (1=asc, -1=desc)
-- `$fields` - select fields: `{"videoId": 1, "priority": 1}`
-- `$max` - limit results: `{"$max": 10}`
-- `$skip` - offset results: `{"$skip": 5}`
+**ヘッダーオプション** (`?h={}` パラメータ経由)
+- `$orderby` - フィールドのソート: `{"priority": 1, "id": -1}` (1=昇順, -1=降順)
+- `$fields` - フィールドの選択: `{"videoId": 1, "priority": 1}`
+- `$max` - 結果の制限: `{"$max": 10}`
+- `$skip` - 結果のオフセット: `{"$skip": 5}`
 
-Example:
+例:
 ```bash
 curl -H "x-apikey: secret" \
   "http://localhost:8888/rest/queue?h={\"$orderby\":{\"id\":-1},\"$max\":10}"
 ```
 
-**Metadata API**
-- `GET /rest/_meta` - Get database metadata
-- `GET /rest/<collection>/_meta` - Get collection metadata (field types, document count)
+**メタデータ API**
+- `GET /rest/_meta` - データベースのメタデータを取得
+- `GET /rest/<collection>/_meta` - コレクションのメタデータを取得 (フィールドタイプ、ドキュメント数)
 
-**Bulk Operations**
-- `DELETE /rest/<collection>/*` - Delete by ID list (body: `["id1", "id2"]`)
-- `DELETE /rest/<collection>/*?q={...}` - Delete by MongoDB query
+**バルク操作**
+- `DELETE /rest/<collection>/*` - ID リストで削除 (本文: `["id1", "id2"]`)
+- `DELETE /rest/<collection>/*?q={...}` - MongoDB 形式のクエリで削除
 
-**API Key**
-- Pass API key via `x-apikey` header
-- Set `PROXY_API_KEY` environment variable to enforce authentication
+**API キー**
+- `x-apikey` ヘッダー経由で API キーを渡す
+- `PROXY_API_KEY` 環境変数を設定して認証を強制する
 
-Troubleshooting
+トラブルシューティング
 
 **Docker Compose: "Can't connect to MySQL server on 'localhost'"**
 
-This error occurs when the proxy starts before MariaDB is ready. The issue has been fixed with:
-- Healthcheck added to MariaDB service
-- `depends_on` condition set to `service_healthy`
+このエラーは、MariaDB の準備ができる前にプロキシが起動した場合に発生します。この問題は以下によって修正されています:
+- MariaDB サービスに追加されたヘルスチェック
+- `service_healthy` に設定された `depends_on` 条件
 
-If you still see this error:
+依然としてこのエラーが表示される場合:
 ```bash
-# Restart all services
+# すべてのサービスを再起動
 docker compose down
 docker compose up --build -d
 
-# Check MariaDB is healthy
+# MariaDB が正常 (healthy) か確認
 docker compose ps
 
-# Wait for MariaDB to be ready (may take 15-30 seconds on first start)
+# MariaDB の準備ができるまで待機 (初回起動時は 15〜30 秒かかる場合があります)
 docker compose logs mariadb | tail -20
 
-# Restart proxy once MariaDB is healthy
+# MariaDB が正常になったらプロキシを再起動
 docker compose restart proxy
 ```
 
-**"Can't initialize database" warnings in logs**
+**ログの "Can't initialize database" 警告**
 
-The proxy now continues operation even if the database is not ready at startup. Tables will be created on first request.
+データベースが起動時に準備できていなくても、プロキシは動作を継続するようになりました。テーブルは初回のリクエスト時に作成されます。
 
-**phpMyAdmin: Can't connect to database**
+**phpMyAdmin: データベースに接続できない**
 
-If phpMyAdmin cannot connect, ensure:
-1. MariaDB service is running: `docker compose ps`
-2. Check MariaDB logs: `docker compose logs mariadb`
-3. Verify environment variables match between docker-compose.yml and MariaDB container
+phpMyAdmin が接続できない場合は、以下を確認してください:
+1. MariaDB サービスが実行されているか: `docker compose ps`
+2. MariaDB のログを確認: `docker compose logs mariadb`
+3. docker-compose.yml と MariaDB コンテナ間で環境変数が一致しているか検証
 
-**Checking database connectivity**
+**データベースの接続確認**
 
-Use the health endpoint:
+ヘルスエンドポイントを使用:
 ```bash
 curl http://localhost:8888/health
 ```
 
-Or test MariaDB directly:
+または MariaDB を直接テスト:
 ```bash
 docker exec restdb.io-proxy-mariadb-1 mysqladmin -h localhost -u root -p${MYSQL_ROOT_PASSWORD} ping
 ```
 
-**Logs**
+**ログ**
 
-View all service logs:
+すべてのサービスログを表示:
 ```bash
 docker compose logs -f
 ```
 
-View specific service:
+特定のサービスを表示:
 ```bash
 docker compose logs -f proxy
 docker compose logs -f mariadb
