@@ -22,4 +22,4 @@ if [ -f .env ]; then
 fi
 
 echo "Starting uvicorn (development)..."
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8888

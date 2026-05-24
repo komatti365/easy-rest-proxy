@@ -3,12 +3,13 @@ import logging
 import os
 import re
 import traceback
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_, inspect as sql_inspect, text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from dotenv import load_dotenv
@@ -19,26 +20,20 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 # Configuration
-def get_env_or_file(env_var, default=None):
-    """Get value from environment variable, or from a file if {env_var}_FILE is set."""
-    file_env_var = f"{env_var}_FILE"
-    if file_env_var in os.environ:
-        file_path = os.environ[file_env_var]
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        except Exception as e:
-            logger.error(f"Failed to read secret from {file_path}: {e}")
-            return default
-    return os.getenv(env_var, default)
+PROXY_API_KEY = os.getenv("PROXY_API_KEY")
+PROXY_API_KEY_FILE = os.getenv("PROXY_API_KEY_FILE")
+if PROXY_API_KEY_FILE and os.path.exists(PROXY_API_KEY_FILE):
+    with open(PROXY_API_KEY_FILE, "r", encoding="utf-8") as f:
+        PROXY_API_KEY = f.read().strip()
+elif PROXY_API_KEY:
+    PROXY_API_KEY = PROXY_API_KEY.strip()
 
-PROXY_API_KEY = get_env_or_file("PROXY_API_KEY")
-DATABASE_URL = get_env_or_file("DATABASE_URL")
-DB_USER = get_env_or_file("DB_USER", "restdb_user")
-DB_PASSWORD = get_env_or_file("DB_PASSWORD", "restdb_pass")
-DB_HOST = get_env_or_file("DB_HOST", "localhost")
-DB_PORT = get_env_or_file("DB_PORT", "3306")
-DB_NAME = get_env_or_file("DB_NAME", "restdb_proxy")
+DATABASE_URL = os.getenv("DATABASE_URL")
+DB_USER = os.getenv("DB_USER", "restdb_user")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "restdb_pass")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "3306")
+DB_NAME = os.getenv("DB_NAME", "restdb_proxy")
 
 # Build database URL if not provided
 if not DATABASE_URL:
@@ -48,11 +43,6 @@ if not DATABASE_URL:
 engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
-
-# Dynamic collection registry
-AVAILABLE_TABLES: Dict[str, Dict[str, Any]] = {}
-PREDEFINED_MODELS: Dict[str, Any] = {}
-DEFAULT_DYNAMIC_COLUMNS = ["id", "videoId", "created_at"]
 
 
 # Models
@@ -73,8 +63,8 @@ class RequestModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
-class Quoted(Base):
-    __tablename__ = "quoted"
+class Quote(Base):
+    __tablename__ = "quote"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     videoId = Column(String(255), nullable=False)
@@ -82,11 +72,14 @@ class Quoted(Base):
     quotedAt = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
-PREDEFINED_MODELS.update({
-    "queue": Queue,
-    "requests": RequestModel,
-    "quoted": Quoted,
-})
+class Config(Base):
+    __tablename__ = "config"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(String(255), nullable=False, unique=True)
+    value = Column(String(2048), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
 # Pydantic models
@@ -168,171 +161,32 @@ def build_filter(query: Dict[str, Any], model) -> Any:
 
 
 # Events
+MAX_DB_INIT_RETRIES = int(os.getenv("DB_INIT_RETRIES", "10"))
+DB_INIT_RETRY_DELAY = float(os.getenv("DB_INIT_RETRY_DELAY", "3"))
+
 @app.on_event("startup")
 async def startup_event():
-    """Create tables on startup and discover available tables."""
-    try:
-        logger.info(f"Attempting to connect to database at {DB_HOST}:{DB_PORT}/{DB_NAME}")
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables created/verified successfully")
-        await discover_tables()
-    except Exception as e:
-        logger.warning(f"Database initialization warning (app will continue): {e}")
-        logger.debug(f"Startup error details:\n{traceback.format_exc()}")
-        # Continue anyway - tables will be created on first request if needed
-
-
-async def discover_tables():
-    """Discover all tables in the database and register them."""
-    try:
-        async with engine.begin() as conn:
-            def _discover(sync_conn):
-                inspector = sql_inspect(sync_conn)
-                tables = inspector.get_table_names()
-                table_info = {}
-
-                for table_name in tables:
-                    columns = inspector.get_columns(table_name)
-                    column_info = [
-                        {
-                            "name": col["name"],
-                            "type": str(col["type"]),
-                            "nullable": col["nullable"],
-                            "primary_key": col.get("primary_key", False),
-                        }
-                        for col in columns
-                    ]
-                    table_info[table_name] = {
-                        "name": table_name,
-                        "columns": column_info,
-                        "column_count": len(column_info),
-                    }
-                return table_info
-
-            table_info = await conn.run_sync(_discover)
-            AVAILABLE_TABLES.clear()
-            AVAILABLE_TABLES.update(table_info)
-            logger.info(f"Discovered {len(AVAILABLE_TABLES)} tables: {list(AVAILABLE_TABLES.keys())}")
-    except Exception as e:
-        logger.warning(f"Failed to discover tables: {e}")
-        logger.debug(f"Discovery error details:\n{traceback.format_exc()}")
-
-
-def is_valid_collection_name(collection: str) -> bool:
-    """Allow only safe collection names to prevent SQL injection."""
-    return bool(re.match(r"^[A-Za-z0-9_]+$", collection))
-
-
-async def create_table_dynamically(collection: str) -> bool:
-    """Create a new table with a default preset schema."""
-    if not is_valid_collection_name(collection):
-        logger.warning(f"Invalid collection name for dynamic creation: {collection}")
-        return False
-
-    try:
-        logger.info(f"Creating table '{collection}' with default schema")
-        async with engine.begin() as conn:
-            await conn.execute(
-                text(
-                    f"CREATE TABLE IF NOT EXISTS `{collection}` ("
-                    "`id` INT AUTO_INCREMENT PRIMARY KEY, "
-                    "`videoId` VARCHAR(255) NOT NULL, "
-                    "`created_at` DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL"
-                    ")"
-                )
+    """Create tables on startup, retrying until the database is ready."""
+    logger.info(f"Attempting to connect to database at {DB_HOST}:{DB_PORT}/{DB_NAME}")
+    last_exception = None
+    for attempt in range(1, MAX_DB_INIT_RETRIES + 1):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables created/verified successfully")
+            return
+        except Exception as e:
+            last_exception = e
+            logger.warning(
+                f"Database initialization attempt {attempt}/{MAX_DB_INIT_RETRIES} failed: {e}"
             )
-        await discover_tables()
-        return True
-    except Exception as e:
-        logger.error(f"Failed to create table '{collection}': {e}\n{traceback.format_exc()}")
-        return False
-
-
-async def ensure_collection_exists(collection: str) -> Any:
-    """Ensure a collection exists, dynamically creating it if necessary."""
-    if collection in PREDEFINED_MODELS or collection in AVAILABLE_TABLES:
-        return get_model_by_collection(collection)
-
-    if not is_valid_collection_name(collection):
-        return None
-
-    if await create_table_dynamically(collection):
-        return get_model_by_collection(collection)
-    return None
-
-
-def build_dynamic_where_clause(query: Dict[str, Any]) -> (str, Dict[str, Any]):
-    clauses = []
-    params: Dict[str, Any] = {}
-    index = 0
-
-    for field_name, condition in query.items():
-        mapped_field_name = "id" if field_name == "_id" else field_name
-        if mapped_field_name not in DEFAULT_DYNAMIC_COLUMNS:
-            continue
-
-        if isinstance(condition, dict):
-            if "$eq" in condition:
-                index += 1
-                param_name = f"param_{index}"
-                clauses.append(f"`{mapped_field_name}` = :{param_name}")
-                params[param_name] = condition["$eq"]
-            if "$gt" in condition:
-                index += 1
-                param_name = f"param_{index}"
-                clauses.append(f"`{mapped_field_name}` > :{param_name}")
-                params[param_name] = condition["$gt"]
-            if "$lt" in condition:
-                index += 1
-                param_name = f"param_{index}"
-                clauses.append(f"`{mapped_field_name}` < :{param_name}")
-                params[param_name] = condition["$lt"]
-            if "$gte" in condition:
-                index += 1
-                param_name = f"param_{index}"
-                clauses.append(f"`{mapped_field_name}` >= :{param_name}")
-                params[param_name] = condition["$gte"]
-            if "$lte" in condition:
-                index += 1
-                param_name = f"param_{index}"
-                clauses.append(f"`{mapped_field_name}` <= :{param_name}")
-                params[param_name] = condition["$lte"]
-            if "$in" in condition and isinstance(condition["$in"], list):
-                index += 1
-                param_name = f"param_{index}"
-                clauses.append(f"`{mapped_field_name}` IN :{param_name}")
-                params[param_name] = tuple(condition["$in"])
-            if "$nin" in condition and isinstance(condition["$nin"], list):
-                index += 1
-                param_name = f"param_{index}"
-                clauses.append(f"`{mapped_field_name}` NOT IN :{param_name}")
-                params[param_name] = tuple(condition["$nin"])
-            if "$ne" in condition:
-                index += 1
-                param_name = f"param_{index}"
-                clauses.append(f"`{mapped_field_name}` != :{param_name}")
-                params[param_name] = condition["$ne"]
-        else:
-            index += 1
-            param_name = f"param_{index}"
-            clauses.append(f"`{mapped_field_name}` = :{param_name}")
-            params[param_name] = condition
-
-    return " AND ".join(clauses), params
-
-
-def build_dynamic_order_by(options: Dict[str, Any]) -> str:
-    orderby = options.get("$orderby", {})
-    clauses = []
-    for field_name, direction in orderby.items():
-        mapped_field_name = "id" if field_name == "_id" else field_name
-        if mapped_field_name in DEFAULT_DYNAMIC_COLUMNS:
-            direction_str = "DESC" if direction == -1 else "ASC"
-            clauses.append(f"`{mapped_field_name}` {direction_str}")
-    if clauses:
-        return "ORDER BY " + ", ".join(clauses)
-    return ""
+            logger.debug(f"Startup error details:\n{traceback.format_exc()}")
+            if attempt == MAX_DB_INIT_RETRIES:
+                logger.error(
+                    "Database initialization failed after maximum retries. Aborting startup."
+                )
+                raise
+            await asyncio.sleep(DB_INIT_RETRY_DELAY)
 
 
 # Health check
@@ -352,14 +206,9 @@ async def health_check(session: AsyncSession = Depends(get_session)):
 # ============================================================
 
 def get_model_by_collection(collection: str):
-    """Return the model class or dynamic table name for a collection."""
-    if collection in PREDEFINED_MODELS:
-        return PREDEFINED_MODELS[collection]
-
-    if collection in AVAILABLE_TABLES:
-        return collection
-
-    return None
+    """Return the model class for a collection name."""
+    models = {"queue": Queue, "requests": RequestModel, "quote": Quote, "config": Config}
+    return models.get(collection)
 
 
 @app.get("/rest/{collection}")
@@ -370,93 +219,56 @@ async def get_collection(
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
-    """GET /rest/<collection> - Get list with optional MongoDB query and header options.
-
-    Automatically creates a default table for unknown collections.
-    """
+    """GET /rest/<collection> - Get list with optional MongoDB query and header options."""
     try:
         model = get_model_by_collection(collection)
         if not model:
-            model = await ensure_collection_exists(collection)
-            if not model:
-                raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
-
+            raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
+        
+        # Parse query and options
         query_obj = parse_mongodb_query(q)
         options_obj = parse_header_options(h)
-
+        
         logger.debug(f"GET /rest/{collection}: q={query_obj}, h={options_obj}")
-
-        if isinstance(model, str):
-            # Generic dynamic table handling
-            if not is_valid_collection_name(collection):
-                raise HTTPException(status_code=400, detail="Invalid collection name")
-
-            where_clause = ""
-            params: Dict[str, Any] = {}
-            if query_obj:
-                where_clause, params = build_dynamic_where_clause(query_obj)
-                if where_clause:
-                    where_clause = f"WHERE {where_clause}"
-
-            order_by = build_dynamic_order_by(options_obj)
-            limit = options_obj.get("$max")
-            skip = options_obj.get("$skip")
-
-            sql = f"SELECT * FROM `{collection}` {where_clause} {order_by}"
-            if limit is not None:
-                sql += f" LIMIT :__limit"
-                params["__limit"] = int(limit)
-            if skip:
-                if limit is None:
-                    sql += " LIMIT 18446744073709551615"
-                sql += f" OFFSET :__offset"
-                params["__offset"] = int(skip)
-
-            result = await session.execute(text(sql), params)
-            rows = result.mappings().all()
-            fields = options_obj.get("$fields", {})
-            if "_id" in fields:
-                fields["id"] = fields.pop("_id")
-
-            items = []
-            for row in rows:
-                obj = {"_id": str(row.get("id"))}
-                for key, value in row.items():
-                    if key == "id":
-                        continue
-                    if not fields or key in fields:
-                        obj[key] = value
-                items.append(obj)
-            return items
-
-        # Predefined model handling
+        
+        # Build base query
         stmt = select(model)
+        
+        # Apply filters
         if query_obj:
             filter_clause = build_filter(query_obj, model)
             if filter_clause is not None:
                 stmt = stmt.where(filter_clause)
-
+        
+        # Apply ordering (from $orderby in options)
         orderby = options_obj.get("$orderby", {})
         for field_name, direction in orderby.items():
+            # Map _id to id (restdb.io compatibility)
             mapped_field_name = "id" if field_name == "_id" else field_name
             field = getattr(model, mapped_field_name, None)
             if field:
-                stmt = stmt.order_by(field.desc() if direction == -1 else field.asc())
-
+                if direction == -1:
+                    stmt = stmt.order_by(field.desc())
+                else:
+                    stmt = stmt.order_by(field.asc())
+        
+        # Apply paging
         skip = options_obj.get("$skip", 0)
         limit = options_obj.get("$max", None)
         if skip:
             stmt = stmt.offset(skip)
         if limit:
             stmt = stmt.limit(limit)
-
+        
         result = await session.execute(stmt)
         rows = result.scalars().all()
-
+        
+        # Build response with $fields filtering
         fields = options_obj.get("$fields", {})
+        # Map _id in fields to id
         if "_id" in fields:
             fields["id"] = fields.pop("_id")
-
+        
         items = []
         for row in rows:
             obj = {"_id": str(row.id)}
@@ -465,7 +277,7 @@ async def get_collection(
                     if not fields or col.name in fields:
                         obj[col.name] = getattr(row, col.name)
             items.append(obj)
-
+        
         return items
     except HTTPException:
         raise
@@ -485,33 +297,15 @@ async def get_collection_item(
     try:
         model = get_model_by_collection(collection)
         if not model:
-            model = await ensure_collection_exists(collection)
-            if not model:
-                raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
-
-        if isinstance(model, str):
-            if not is_valid_collection_name(collection):
-                raise HTTPException(status_code=400, detail="Invalid collection name")
-
-            stmt = text(f"SELECT * FROM `{collection}` WHERE `id` = :id")
-            result = await session.execute(stmt, {"id": int(item_id)})
-            row = result.mappings().first()
-            if not row:
-                raise HTTPException(status_code=404, detail=f"Document not found: {item_id}")
-
-            obj = {"_id": str(row["id"])}
-            for key, value in row.items():
-                if key != "id":
-                    obj[key] = value
-            return obj
-
+            raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
+        
         stmt = select(model).where(model.id == int(item_id))
         result = await session.execute(stmt)
         row = result.scalars().first()
-
+        
         if not row:
             raise HTTPException(status_code=404, detail=f"Document not found: {item_id}")
-
+        
         obj = {"_id": str(row.id)}
         for col in row.__table__.columns:
             if col.name != "id":
@@ -549,8 +343,16 @@ async def post_collection(
             kwargs = {}
             for col in model.__table__.columns:
                 if col.name != "id" and col.name in item:
-                    kwargs[col.name] = item[col.name]
-            
+                    val = item[col.name]
+                    if isinstance(col.type, DateTime) and isinstance(val, str):
+                        try:
+                            # Python 3.11以降なら Z や +00:00 を解釈可能
+                            dt = datetime.fromisoformat(val.replace('Z', '+00:00'))
+                            val = dt.replace(tzinfo=None)
+                        except ValueError:
+                            # パースに失敗した場合はそのままにする（あるいはエラーを返す処理にする）
+                            pass
+                    kwargs[col.name] = val
             db_item = model(**kwargs)
             session.add(db_item)
         
@@ -752,7 +554,7 @@ async def get_meta(_: Any = Depends(check_api_key)):
     """GET /rest/_meta - Get database metadata."""
     try:
         return {
-            "collections": ["queue", "requests"],
+            "collections": ["queue", "requests", "quote", "config"],
             "version": "1.0",
             "backend": "MariaDB",
         }
@@ -811,7 +613,7 @@ async def get_queue_compat(
     session: AsyncSession = Depends(get_session),
 ):
     """GET /queue - backward compatibility for /rest/queue"""
-    return await get_collection("queue", q, h, _, session)
+    return await get_collection("queue", q=q, h=h, _=_, session=session)
 
 
 @app.post("/queue", status_code=201)
@@ -821,7 +623,7 @@ async def post_queue_compat(
     session: AsyncSession = Depends(get_session),
 ):
     """POST /queue - backward compatibility for /rest/queue"""
-    return await post_collection("queue", request, _, session)
+    return await post_collection("queue", request=request, _=_, session=session)
 
 
 @app.delete("/queue/{item_id}")
@@ -831,7 +633,7 @@ async def delete_queue_compat(
     session: AsyncSession = Depends(get_session),
 ):
     """DELETE /queue/{item_id} - backward compatibility for /rest/queue/{item_id}"""
-    return await delete_collection_item("queue", item_id, _, session)
+    return await delete_collection_item("queue", item_id, _=_, session=session)
 
 
 @app.get("/requests")
@@ -840,7 +642,7 @@ async def get_requests_compat(
     session: AsyncSession = Depends(get_session),
 ):
     """GET /requests - backward compatibility for /rest/requests"""
-    return await get_collection("requests", None, None, _, session)
+    return await get_collection("requests", q=None, h=None, _=_, session=session)
 
 
 @app.post("/requests", status_code=201)
@@ -850,7 +652,7 @@ async def post_requests_compat(
     session: AsyncSession = Depends(get_session),
 ):
     """POST /requests - backward compatibility for /rest/requests"""
-    return await post_collection("requests", request, _, session)
+    return await post_collection("requests", request=request, _=_, session=session)
 
 
 @app.delete("/requests/*")
@@ -861,5 +663,35 @@ async def delete_requests_bulk_compat(
     session: AsyncSession = Depends(get_session),
 ):
     """DELETE /requests/* - backward compatibility for /rest/requests/*"""
-    return await delete_collection_bulk("requests", q, request, _, session)
+    return await delete_collection_bulk("requests", q=q, request=request, _=_, session=session)
 
+
+@app.get("/quote")
+async def get_quote_compat(
+    q: Optional[str] = None,
+    h: Optional[str] = None,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """GET /quote - backward compatibility for /rest/quote"""
+    return await get_collection("quote", q=q, h=h, _=_, session=session)
+
+
+@app.post("/quote", status_code=201)
+async def post_quote_compat(
+    request: Request,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """POST /quote - backward compatibility for /rest/quote"""
+    return await post_collection("quote", request=request, _=_, session=session)
+
+
+@app.delete("/quote/{item_id}")
+async def delete_quote_compat(
+    item_id: str,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """DELETE /quote/{item_id} - backward compatibility for /rest/quote/{item_id}"""
+    return await delete_collection_item("quote", item_id, _=_, session=session)
