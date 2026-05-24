@@ -30,7 +30,7 @@ elif PROXY_API_KEY:
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 DB_USER = os.getenv("DB_USER", "restdb_user")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "restdb_pass")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "3306")
 DB_NAME = os.getenv("DB_NAME", "restdb_proxy")

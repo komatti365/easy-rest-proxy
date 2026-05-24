@@ -62,7 +62,7 @@ Important variables (see `.env.example`):
 - `PROXY_API_KEY` - optional API key to require clients supply `x-apikey` header.
 - `DATABASE_URL` - optional full database URL (overrides host/port/user/password/db).
 - `DB_USER` - MariaDB username (default: `restdb_user` when using compose).
-- `DB_PASSWORD` - MariaDB password (default: `restdb_pass` when using compose).
+- `DB_PASSWORD` - MariaDB password (set in `.env` or external secret store).
 - `DB_HOST` - MariaDB hostname (default: `mariadb` when using compose).
 - `DB_PORT` - MariaDB port (default: `3306`).
 - `DB_NAME` - MariaDB database name (default: `restdb_proxy`).
@@ -88,10 +88,10 @@ phpMyAdmin (GUI for database management)
 When using `docker compose up`, phpMyAdmin is automatically started and accessible at:
 **http://localhost:8081**
 
-Default credentials (set in docker-compose.yml):
+Default credentials (set in docker-compose.yml if not overridden by environment variables):
 - Server: `mariadb`
 - Username: `root`
-- Password: `root_pass`
+- Password: set via `PMA_PASSWORD`
 
 Use this GUI to:
 - Browse all tables (queue and requests)
@@ -219,7 +219,7 @@ curl http://localhost:8888/health
 
 Or test MariaDB directly:
 ```bash
-docker exec restdb.io-proxy-mariadb-1 mysqladmin -h localhost -u root -proot_pass ping
+docker exec restdb.io-proxy-mariadb-1 mysqladmin -h localhost -u root -p${MYSQL_ROOT_PASSWORD} ping
 ```
 
 **Logs**
