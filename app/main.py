@@ -529,8 +529,11 @@ async def delete_collection_bulk(
                         stmt = sql_delete(model).where(model.id == int(item_id))
                         result = await session.execute(stmt)
                         deleted_count += result.rowcount
-            except:
-                pass
+            except Exception:
+                # Body is empty or invalid JSON -> Delete all documents
+                stmt = sql_delete(model)
+                result = await session.execute(stmt)
+                deleted_count = result.rowcount
         
         await session.commit()
         return {"deleted": deleted_count}
