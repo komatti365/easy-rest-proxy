@@ -83,6 +83,17 @@ class Config(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
+class NowPlaying(Base):
+    __tablename__ = "nowplaying"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    videoId = Column(String(255), nullable=True)
+    title = Column(String(1024), nullable=True)
+    duration = Column(Integer, nullable=True)
+    remainingTime = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
 # Pydantic models
 class QueueItem(BaseModel):
     videoId: str
@@ -208,7 +219,7 @@ async def health_check(session: AsyncSession = Depends(get_session)):
 
 def get_model_by_collection(collection: str):
     """Return the model class for a collection name."""
-    models = {"queue": Queue, "requests": RequestModel, "quote": Quote, "config": Config}
+    models = {"queue": Queue, "requests": RequestModel, "quote": Quote, "config": Config, "nowplaying": NowPlaying}
     return models.get(collection)
 
 
@@ -567,7 +578,7 @@ async def get_meta(_: Any = Depends(check_api_key)):
     """GET /rest/_meta - Get database metadata."""
     try:
         return {
-            "collections": ["queue", "requests", "quote", "config"],
+            "collections": ["queue", "requests", "quote", "config", "nowplaying"],
             "version": "1.0",
             "backend": "MariaDB",
         }
@@ -761,3 +772,56 @@ async def delete_config_compat(
 ):
     """DELETE /config/{item_id} - backward compatibility for /rest/config/{item_id}"""
     return await delete_collection_item("config", item_id, _=_, session=session)
+
+
+@app.get("/nowplaying")
+async def get_nowplaying_compat(
+    q: Optional[str] = None,
+    h: Optional[str] = None,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """GET /nowplaying - backward compatibility for /rest/nowplaying"""
+    return await get_collection("nowplaying", q=q, h=h, _=_, session=session)
+
+
+@app.post("/nowplaying", status_code=201)
+async def post_nowplaying_compat(
+    request: Request,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """POST /nowplaying - backward compatibility for /rest/nowplaying"""
+    return await post_collection("nowplaying", request=request, _=_, session=session)
+
+
+@app.put("/nowplaying/{item_id}")
+async def put_nowplaying_compat(
+    item_id: str,
+    request: Request,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """PUT /nowplaying/{item_id} - backward compatibility for /rest/nowplaying/{item_id}"""
+    return await put_collection_item("nowplaying", item_id, request=request, _=_, session=session)
+
+
+@app.patch("/nowplaying/{item_id}")
+async def patch_nowplaying_compat(
+    item_id: str,
+    request: Request,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """PATCH /nowplaying/{item_id} - backward compatibility for /rest/nowplaying/{item_id}"""
+    return await patch_collection_item("nowplaying", item_id, request=request, _=_, session=session)
+
+
+@app.delete("/nowplaying/{item_id}")
+async def delete_nowplaying_compat(
+    item_id: str,
+    _: Any = Depends(check_api_key),
+    session: AsyncSession = Depends(get_session),
+):
+    """DELETE /nowplaying/{item_id} - backward compatibility for /rest/nowplaying/{item_id}"""
+    return await delete_collection_item("nowplaying", item_id, _=_, session=session)
