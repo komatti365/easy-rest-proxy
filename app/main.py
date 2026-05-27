@@ -208,9 +208,9 @@ async def health_check(session: AsyncSession = Depends(get_session)):
     try:
         await session.execute(select(1))
         return {"status": "ok", "database": "connected"}
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return {"status": "error", "database": "failed", "error": str(e)}
+    except Exception:
+        logger.exception("Health check failed")
+        return {"status": "error", "database": "failed", "error": "Internal server error"}
 
 
 # ============================================================
