@@ -210,7 +210,11 @@ async def health_check(session: AsyncSession = Depends(get_session)):
         return {"status": "ok", "database": "connected"}
     except Exception:
         logger.exception("Health check failed")
-        return {"status": "error", "database": "failed", "error": "Internal server error"}
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "database": "failed", "error": "Internal server error"}
+        )
 
 
 # ============================================================
