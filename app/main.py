@@ -29,6 +29,14 @@ if PROXY_API_KEY_FILE and os.path.exists(PROXY_API_KEY_FILE):
 elif PROXY_API_KEY:
     PROXY_API_KEY = PROXY_API_KEY.strip()
 
+PROXY_READONLY_API_KEY = os.getenv("PROXY_READONLY_API_KEY")
+PROXY_READONLY_API_KEY_FILE = os.getenv("PROXY_READONLY_API_KEY_FILE")
+if PROXY_READONLY_API_KEY_FILE and os.path.exists(PROXY_READONLY_API_KEY_FILE):
+    with open(PROXY_READONLY_API_KEY_FILE, "r", encoding="utf-8") as f:
+        PROXY_READONLY_API_KEY = f.read().strip()
+elif PROXY_READONLY_API_KEY:
+    PROXY_READONLY_API_KEY = PROXY_READONLY_API_KEY.strip()
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 DB_USER = os.getenv("DB_USER", "restdb_user")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
@@ -111,8 +119,23 @@ async def get_session() -> AsyncSession:
 
 
 # API key check
-async def check_api_key(x_apikey: Optional[str] = Header(None)):
-    if PROXY_API_KEY and x_apikey != PROXY_API_KEY:
+async def check_api_key(request: Request, x_apikey: Optional[str] = Header(None)):
+    # 1. マスターキー(PROXY_API_KEY)が一致すれば、すべてのメソッドを許可
+    if PROXY_API_KEY and x_apikey == PROXY_API_KEY:
+        return
+        
+    # 2. 読み取り専用キー(PROXY_READONLY_API_KEY)が一致し、メソッドがGET/HEAD/OPTIONSの場合のみ許可
+    if PROXY_READONLY_API_KEY and x_apikey == PROXY_READONLY_API_KEY:
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Write operations are not allowed with a read-only API key"
+            )
+            
+    # 3. どちらのキーも設定されていないか、不一致の場合
+    if PROXY_API_KEY or PROXY_READONLY_API_KEY:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API key")
 
 

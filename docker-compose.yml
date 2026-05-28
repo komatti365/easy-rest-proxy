@@ -43,6 +43,7 @@ services:
       - ../.env
     environment:
       - PROXY_API_KEY_FILE=/secrets/db_key.txt
+      - PROXY_READONLY_API_KEY_FILE=/secrets/readonly_key.txt
       - DATABASE_URL=${DATABASE_URL}
       - DB_USER=${DB_USER:-restdb_user}
       - DB_PASSWORD=${DB_PASSWORD}
