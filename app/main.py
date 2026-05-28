@@ -102,6 +102,16 @@ class NowPlaying(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
+
+class VideoInfoCache(Base):
+    __tablename__ = "video_info_cache"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    videoId = Column(String(255), nullable=False, unique=True)
+    title = Column(String(1024), nullable=True)
+    thumbnailUrl = Column(String(1024), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
 # Pydantic models
 class QueueItem(BaseModel):
     videoId: str
@@ -246,7 +256,14 @@ async def health_check(session: AsyncSession = Depends(get_session)):
 
 def get_model_by_collection(collection: str):
     """Return the model class for a collection name."""
-    models = {"queue": Queue, "requests": RequestModel, "quote": Quote, "config": Config, "nowplaying": NowPlaying}
+    models = {
+        "queue": Queue, 
+        "requests": RequestModel, 
+        "quote": Quote, 
+        "config": Config, 
+        "nowplaying": NowPlaying,
+        "video_info_cache": VideoInfoCache
+    }
     return models.get(collection)
 
 
@@ -608,7 +625,7 @@ async def get_meta(_: Any = Depends(check_api_key)):
     """GET /rest/_meta - Get database metadata."""
     try:
         return {
-            "collections": ["queue", "requests", "quote", "config", "nowplaying"],
+            "collections": ["queue", "requests", "quote", "config", "nowplaying", "video_info_cache"],
             "version": "1.0",
             "backend": "MariaDB",
         }
