@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, BackgroundTasks
 from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.exc import IntegrityError
@@ -225,16 +225,16 @@ async def migrate_database(conn):
     for table_name in ["queue", "requests", "quote"]:
         try:
             # SHOW COLUMNS は MySQL/MariaDB 独自構文
-            result = await conn.execute(f"SHOW COLUMNS FROM `{table_name}`")
+            result = await conn.execute(text(f"SHOW COLUMNS FROM `{table_name}`"))
             columns = [row[0] for row in result.fetchall()]
             
             if "title" not in columns:
                 logger.info(f"Adding column 'title' to table '{table_name}'")
-                await conn.execute(f"ALTER TABLE `{table_name}` ADD COLUMN `title` VARCHAR(1024) NULL")
+                await conn.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `title` VARCHAR(1024) NULL"))
                 
             if "thumbnailUrl" not in columns:
                 logger.info(f"Adding column 'thumbnailUrl' to table '{table_name}'")
-                await conn.execute(f"ALTER TABLE `{table_name}` ADD COLUMN `thumbnailUrl` VARCHAR(1024) NULL")
+                await conn.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `thumbnailUrl` VARCHAR(1024) NULL"))
         except Exception as e:
             logger.warning(f"Failed to migrate table '{table_name}': {e}")
 
