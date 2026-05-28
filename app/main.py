@@ -4,10 +4,12 @@ import os
 import re
 import traceback
 import asyncio
+import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -61,6 +63,8 @@ class Queue(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     videoId = Column(String(255), nullable=False)
     priority = Column(Boolean, default=False, nullable=False)
+    title = Column(String(1024), nullable=True)
+    thumbnailUrl = Column(String(1024), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -69,6 +73,8 @@ class RequestModel(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     videoId = Column(String(255), nullable=False)
+    title = Column(String(1024), nullable=True)
+    thumbnailUrl = Column(String(1024), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -78,6 +84,8 @@ class Quote(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     videoId = Column(String(255), nullable=False)
     liveId = Column(String(255), nullable=False)
+    title = Column(String(1024), nullable=True)
+    thumbnailUrl = Column(String(1024), nullable=True)
     quotedAt = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -111,6 +119,9 @@ class VideoInfoCache(Base):
     title = Column(String(1024), nullable=True)
     thumbnailUrl = Column(String(1024), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+
 
 # Pydantic models
 class QueueItem(BaseModel):
@@ -209,6 +220,24 @@ def build_filter(query: Dict[str, Any], model) -> Any:
 MAX_DB_INIT_RETRIES = int(os.getenv("DB_INIT_RETRIES", "10"))
 DB_INIT_RETRY_DELAY = float(os.getenv("DB_INIT_RETRY_DELAY", "3"))
 
+async def migrate_database(conn):
+    """queue, requests, quote テーブルに title と thumbnailUrl カラムがあるか確認し、なければ追加する"""
+    for table_name in ["queue", "requests", "quote"]:
+        try:
+            # SHOW COLUMNS は MySQL/MariaDB 独自構文
+            result = await conn.execute(f"SHOW COLUMNS FROM `{table_name}`")
+            columns = [row[0] for row in result.fetchall()]
+            
+            if "title" not in columns:
+                logger.info(f"Adding column 'title' to table '{table_name}'")
+                await conn.execute(f"ALTER TABLE `{table_name}` ADD COLUMN `title` VARCHAR(1024) NULL")
+                
+            if "thumbnailUrl" not in columns:
+                logger.info(f"Adding column 'thumbnailUrl' to table '{table_name}'")
+                await conn.execute(f"ALTER TABLE `{table_name}` ADD COLUMN `thumbnailUrl` VARCHAR(1024) NULL")
+        except Exception as e:
+            logger.warning(f"Failed to migrate table '{table_name}': {e}")
+
 @app.on_event("startup")
 async def startup_event():
     """Create tables on startup, retrying until the database is ready."""
@@ -218,7 +247,9 @@ async def startup_event():
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            logger.info("Database tables created/verified successfully")
+                # 自動マイグレーションの実行
+                await migrate_database(conn)
+            logger.info("Database tables created/verified/migrated successfully")
             return
         except Exception as e:
             last_exception = e
