@@ -171,11 +171,7 @@ async def check_api_key(
                 detail="Write operations are not allowed with a read-only API key"
             )
             
-    # 3. どちらのキーも一致しない、もしくはキーが指定されていない場合 (セキュリティ強化)
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN, 
-        detail="Invalid or missing API key"
-    )
+    # 3. どちらのキーも一致しない、もしくはキーが指定されていない場合 (セキュリティ強化)\n    if PROXY_API_KEY or PROXY_READONLY_API_KEY:\n        raise HTTPException(\n            status_code=status.HTTP_403_FORBIDDEN, \n            detail="Invalid or missing API key"\n        )
 
 
 # Utility: Parse MongoDB-like query
