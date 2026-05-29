@@ -1,17 +1,14 @@
 import json
 import logging
 import os
-import re
 import traceback
 import asyncio
-import urllib.request
-import xml.etree.ElementTree as ET
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, BackgroundTasks
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_, text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.exc import IntegrityError
@@ -242,7 +239,6 @@ async def migrate_database(conn):
 async def startup_event():
     """Create tables on startup, retrying until the database is ready."""
     logger.info(f"Attempting to connect to database at {DB_HOST}:{DB_PORT}/{DB_NAME}")
-    last_exception = None
     for attempt in range(1, MAX_DB_INIT_RETRIES + 1):
         try:
             async with engine.begin() as conn:
@@ -252,7 +248,6 @@ async def startup_event():
             logger.info("Database tables created/verified/migrated successfully")
             return
         except Exception as e:
-            last_exception = e
             logger.warning(
                 f"Database initialization attempt {attempt}/{MAX_DB_INIT_RETRIES} failed: {e}"
             )
