@@ -129,6 +129,16 @@ class QueueItem(BaseModel):
 # FastAPI app
 app = FastAPI(title="restdb.io compatibility proxy (MariaDB backend)")
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.middleware("http")
 async def http_method_override_middleware(request: Request, call_next):
