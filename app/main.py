@@ -338,7 +338,7 @@ def get_model_by_collection(collection: str):
 @app.get("/rest/{collection}")
 @app.get("/{collection}")
 async def get_collection(
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     h: Optional[str] = None,
     sort: Optional[str] = None,
@@ -354,6 +354,10 @@ async def get_collection(
 ):
     """GET /rest/<collection> - Get list with optional MongoDB query and header options."""
     try:
+        # 予約語の除外チェック
+        if collection in {"health", "docs", "redoc", "openapi.json", "rest", "_meta"}:
+            raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
+
         model = get_model_by_collection(collection)
         if not model:
             raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
