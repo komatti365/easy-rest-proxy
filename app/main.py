@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, Path
 from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_, text, inspect
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.exc import IntegrityError
@@ -62,7 +62,7 @@ class Queue(Base):
     priority = Column(Boolean, default=False, nullable=False)
     title = Column(String(1024), nullable=True)
     thumbnailUrl = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
 
 
 class RequestModel(Base):
@@ -72,7 +72,7 @@ class RequestModel(Base):
     videoId = Column(String(255), nullable=False)
     title = Column(String(1024), nullable=True)
     thumbnailUrl = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
 
 
 class Quote(Base):
@@ -83,7 +83,7 @@ class Quote(Base):
     liveId = Column(String(255), nullable=False)
     title = Column(String(1024), nullable=True)
     thumbnailUrl = Column(String(1024), nullable=True)
-    quotedAt = Column(DateTime, default=datetime.utcnow, nullable=False)
+    quotedAt = Column(DateTime, default=func.now(), nullable=False)
 
 
 class Config(Base):
@@ -92,8 +92,8 @@ class Config(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     key = Column(String(255), nullable=False, unique=True)
     value = Column(String(2048), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class NowPlaying(Base):
@@ -104,8 +104,8 @@ class NowPlaying(Base):
     title = Column(String(1024), nullable=True)
     duration = Column(Integer, nullable=True)
     remainingTime = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class VideoInfoCache(Base):
@@ -115,7 +115,7 @@ class VideoInfoCache(Base):
     videoId = Column(String(255), nullable=False, unique=True)
     title = Column(String(1024), nullable=True)
     thumbnailUrl = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
 
 
 
@@ -130,6 +130,20 @@ class QueueItem(BaseModel):
 app = FastAPI(title="restdb.io compatibility proxy (MariaDB backend)")
 
 
+@app.middleware("http")
+async def http_method_override_middleware(request: Request, call_next):
+    """Support X-HTTP-Method-Override header to override HTTP methods."""
+    method_override = request.headers.get("x-http-method-override")
+    if method_override:
+        method_override = method_override.upper()
+        if method_override in ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"):
+            request.scope["method"] = method_override
+            logger.info(f"Method overridden to {method_override} via X-HTTP-Method-Override")
+            
+    response = await call_next(request)
+    return response
+
+
 # Dependency: get database session
 async def get_session() -> AsyncSession:
     async with async_session() as session:
@@ -137,13 +151,18 @@ async def get_session() -> AsyncSession:
 
 
 # API key check
-async def check_api_key(request: Request, x_apikey: Optional[str] = Header(None)):
+async def check_api_key(
+    request: Request,
+    x_apikey: Optional[str] = Header(None),
+    apikey: Optional[str] = None
+):
     # 1. マスターキー(PROXY_API_KEY)が一致すれば、すべてのメソッドを許可
-    if PROXY_API_KEY and x_apikey == PROXY_API_KEY:
+    key = x_apikey or apikey
+    if PROXY_API_KEY and key == PROXY_API_KEY:
         return
         
     # 2. 読み取り専用キー(PROXY_READONLY_API_KEY)が一致し、メソッドがGET/HEAD/OPTIONSの場合のみ許可
-    if PROXY_READONLY_API_KEY and x_apikey == PROXY_READONLY_API_KEY:
+    if PROXY_READONLY_API_KEY and key == PROXY_READONLY_API_KEY:
         if request.method in ("GET", "HEAD", "OPTIONS"):
             return
         else:
@@ -152,9 +171,7 @@ async def check_api_key(request: Request, x_apikey: Optional[str] = Header(None)
                 detail="Write operations are not allowed with a read-only API key"
             )
             
-    # 3. どちらのキーも設定されていないか、不一致の場合
-    if PROXY_API_KEY or PROXY_READONLY_API_KEY:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API key")
+    # 3. どちらのキーも一致しない、もしくはキーが指定されていない場合 (セキュリティ強化)\n    if PROXY_API_KEY or PROXY_READONLY_API_KEY:\n        raise HTTPException(\n            status_code=status.HTTP_403_FORBIDDEN, \n            detail="Invalid or missing API key"\n        )
 
 
 # Utility: Parse MongoDB-like query
@@ -182,6 +199,27 @@ def build_filter(query: Dict[str, Any], model) -> Any:
     """Convert MongoDB-like query to SQLAlchemy filter."""
     filters = []
     for field_name, condition in query.items():
+        # Handle logical operators
+        if field_name == "$or" and isinstance(condition, list):
+            or_filters = []
+            for sub_query in condition:
+                sub_filter = build_filter(sub_query, model)
+                if sub_filter is not None:
+                    or_filters.append(sub_filter)
+            if or_filters:
+                filters.append(or_(*or_filters))
+            continue
+            
+        if field_name == "$and" and isinstance(condition, list):
+            and_filters = []
+            for sub_query in condition:
+                sub_filter = build_filter(sub_query, model)
+                if sub_filter is not None:
+                    and_filters.append(sub_filter)
+            if and_filters:
+                filters.append(and_(*and_filters))
+            continue
+
         # Map _id to id (restdb.io compatibility)
         mapped_field_name = "id" if field_name == "_id" else field_name
         field = getattr(model, mapped_field_name, None)
@@ -206,6 +244,9 @@ def build_filter(query: Dict[str, Any], model) -> Any:
                 filters.append(~field.in_(condition["$nin"]))
             if "$ne" in condition:
                 filters.append(field != condition["$ne"])
+            if "$regex" in condition:
+                # MariaDB's regular expression search via SQLAlchemy regexp_match
+                filters.append(field.regexp_match(condition["$regex"]))
         else:
             # Direct equality
             filters.append(field == condition)
@@ -219,21 +260,26 @@ DB_INIT_RETRY_DELAY = float(os.getenv("DB_INIT_RETRY_DELAY", "3"))
 
 async def migrate_database(conn):
     """queue, requests, quote テーブルに title と thumbnailUrl カラムがあるか確認し、なければ追加する"""
-    for table_name in ["queue", "requests", "quote"]:
-        try:
-            # SHOW COLUMNS は MySQL/MariaDB 独自構文
-            result = await conn.execute(text(f"SHOW COLUMNS FROM `{table_name}`"))
-            columns = [row[0] for row in result.fetchall()]
+    def check_and_add_columns(connection):
+        inspector = inspect(connection)
+        for table_name in ["queue", "requests", "quote"]:
+            if not inspector.has_table(table_name):
+                continue
+            
+            columns = [col["name"] for col in inspector.get_columns(table_name)]
             
             if "title" not in columns:
                 logger.info(f"Adding column 'title' to table '{table_name}'")
-                await conn.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `title` VARCHAR(1024) NULL"))
+                connection.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `title` VARCHAR(1024) NULL"))
                 
             if "thumbnailUrl" not in columns:
                 logger.info(f"Adding column 'thumbnailUrl' to table '{table_name}'")
-                await conn.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `thumbnailUrl` VARCHAR(1024) NULL"))
-        except Exception as e:
-            logger.warning(f"Failed to migrate table '{table_name}': {e}")
+                connection.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `thumbnailUrl` VARCHAR(1024) NULL"))
+
+    try:
+        await conn.run_sync(check_and_add_columns)
+    except Exception as e:
+        logger.warning(f"Failed to migrate tables: {e}")
 
 @app.on_event("startup")
 async def startup_event():
@@ -295,6 +341,14 @@ async def get_collection(
     collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     h: Optional[str] = None,
+    sort: Optional[str] = None,
+    dir: Optional[int] = None,
+    skip: Optional[int] = None,
+    max: Optional[int] = None,
+    metafields: Optional[bool] = None,
+    totals: Optional[bool] = None,
+    count: Optional[bool] = None,
+    apikey: Optional[str] = None,
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -308,7 +362,47 @@ async def get_collection(
         query_obj = parse_mongodb_query(q)
         options_obj = parse_header_options(h)
         
+        # Merge individual query parameters into options_obj
+        if sort is not None:
+            direction = dir if dir is not None else 1
+            options_obj["$orderby"] = {sort: direction}
+        elif dir is not None and "$orderby" in options_obj:
+            for k in options_obj["$orderby"]:
+                options_obj["$orderby"][k] = dir
+                
+        if skip is not None:
+            options_obj["$skip"] = skip
+            
+        if max is not None:
+            options_obj["$max"] = max
+            
+        if metafields is not None:
+            options_obj["$metafields"] = metafields
+            
+        is_totals = totals or False
+        is_count = count or False
+        
         logger.debug(f"GET /rest/{collection}: q={query_obj}, h={options_obj}")
+        
+        # Determine total count if totals option is enabled
+        total_count = 0
+        if is_totals:
+            count_stmt = select(func.count()).select_from(model)
+            if query_obj:
+                filter_clause = build_filter(query_obj, model)
+                if filter_clause is not None:
+                    count_stmt = count_stmt.where(filter_clause)
+            count_result = await session.execute(count_stmt)
+            total_count = count_result.scalar() or 0
+            
+            # If only count is requested, return early
+            if is_count:
+                return {
+                    "data": [],
+                    "totals": {
+                        "count": total_count
+                    }
+                }
         
         # Build base query
         stmt = select(model)
@@ -332,12 +426,12 @@ async def get_collection(
                     stmt = stmt.order_by(field.asc())
         
         # Apply paging
-        skip = options_obj.get("$skip", 0)
-        limit = options_obj.get("$max", None)
-        if skip:
-            stmt = stmt.offset(skip)
-        if limit:
-            stmt = stmt.limit(limit)
+        skip_val = options_obj.get("$skip", 0)
+        limit_val = options_obj.get("$max", 1000) # Default to 1000 records
+        if skip_val:
+            stmt = stmt.offset(skip_val)
+        if limit_val and limit_val > 0:
+            stmt = stmt.limit(limit_val)
         
         result = await session.execute(stmt)
         rows = result.scalars().all()
@@ -347,6 +441,8 @@ async def get_collection(
         # Map _id in fields to id
         if "_id" in fields:
             fields["id"] = fields.pop("_id")
+            
+        include_metafields = options_obj.get("$metafields", False)
         
         items = []
         for row in rows:
@@ -355,7 +451,30 @@ async def get_collection(
                 if col.name != "id":
                     if not fields or col.name in fields:
                         obj[col.name] = getattr(row, col.name)
+            
+            if include_metafields:
+                created_val = getattr(row, "created_at", None) or getattr(row, "quotedAt", None)
+                if created_val and isinstance(created_val, datetime):
+                    obj["_created"] = created_val.isoformat() + "Z"
+                
+                changed_val = getattr(row, "updated_at", None) or created_val
+                if changed_val and isinstance(changed_val, datetime):
+                    obj["_changed"] = changed_val.isoformat() + "Z"
+                    
+                obj["_version"] = 0
+                
             items.append(obj)
+            
+        if is_totals:
+            return {
+                "data": items,
+                "totals": {
+                    "total": total_count,
+                    "count": len(items),
+                    "skip": skip_val,
+                    "max": limit_val
+                }
+            }
         
         return items
     except HTTPException:
@@ -369,7 +488,9 @@ async def get_collection(
 @app.get("/{collection}/{item_id}")
 async def get_collection_item(
     item_id: str,
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^[a-zA-Z0-9_-]+$"),
+    metafields: Optional[bool] = None,
+    apikey: Optional[str] = None,
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -378,6 +499,9 @@ async def get_collection_item(
         model = get_model_by_collection(collection)
         if not model:
             raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
+        
+        if not item_id.isdigit():
+            raise HTTPException(status_code=400, detail=f"Invalid item ID: {item_id}. ID must be an integer.")
         
         stmt = select(model).where(model.id == int(item_id))
         result = await session.execute(stmt)
@@ -390,6 +514,18 @@ async def get_collection_item(
         for col in row.__table__.columns:
             if col.name != "id":
                 obj[col.name] = getattr(row, col.name)
+                
+        if metafields:
+            created_val = getattr(row, "created_at", None) or getattr(row, "quotedAt", None)
+            if created_val and isinstance(created_val, datetime):
+                obj["_created"] = created_val.isoformat() + "Z"
+            
+            changed_val = getattr(row, "updated_at", None) or created_val
+            if changed_val and isinstance(changed_val, datetime):
+                obj["_changed"] = changed_val.isoformat() + "Z"
+                
+            obj["_version"] = 0
+            
         return obj
     except HTTPException:
         raise
@@ -402,7 +538,7 @@ async def get_collection_item(
 @app.post("/{collection}", status_code=201)
 async def post_collection(
     request: Request,
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -418,7 +554,7 @@ async def post_collection(
         else:
             items = [body]
         
-        created = []
+        db_items = []
         for item in items:
             # Filter only valid columns
             kwargs = {}
@@ -436,23 +572,37 @@ async def post_collection(
                     kwargs[col.name] = val
             db_item = model(**kwargs)
             session.add(db_item)
+            db_items.append(db_item)
         
         await session.commit()
+        for db_item in db_items:
+            await session.refresh(db_item)
         
         # Return created items with IDs
-        for item in items:
-            # Query to get the last inserted row
-            latest_stmt = select(model).order_by(model.id.desc()).limit(1)
-            result = await session.execute(latest_stmt)
-            db_item = result.scalars().first()
-            if db_item:
-                obj = {"_id": str(db_item.id)}
-                for col in db_item.__table__.columns:
-                    if col.name != "id":
-                        obj[col.name] = getattr(db_item, col.name)
-                created.append(obj)
+        created = []
+        for db_item in db_items:
+            obj = {"_id": str(db_item.id)}
+            for col in db_item.__table__.columns:
+                if col.name != "id":
+                    obj[col.name] = getattr(db_item, col.name)
+            
+            # Add metafields by default for newly created items
+            created_val = getattr(db_item, "created_at", None) or getattr(db_item, "quotedAt", None)
+            if created_val and isinstance(created_val, datetime):
+                obj["_created"] = created_val.isoformat() + "Z"
+            
+            changed_val = getattr(db_item, "updated_at", None) or created_val
+            if changed_val and isinstance(changed_val, datetime):
+                obj["_changed"] = changed_val.isoformat() + "Z"
+                
+            obj["_version"] = 0
+            
+            created.append(obj)
         
-        return created
+        if isinstance(body, list):
+            return created
+        else:
+            return created[0] if created else {}
     except IntegrityError as e:
         logger.warning(f"Integrity error in POST /rest/{collection}: {e}")
         await session.rollback()
@@ -470,7 +620,7 @@ async def post_collection(
 async def put_collection_item(
     item_id: str,
     request: Request,
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -479,6 +629,9 @@ async def put_collection_item(
         model = get_model_by_collection(collection)
         if not model:
             raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
+        
+        if not item_id.isdigit():
+            raise HTTPException(status_code=400, detail=f"Invalid item ID: {item_id}. ID must be an integer.")
         
         body = await request.json()
         
@@ -495,11 +648,24 @@ async def put_collection_item(
                 setattr(db_item, col.name, body[col.name])
         
         await session.commit()
+        await session.refresh(db_item)
         
         obj = {"_id": str(db_item.id)}
         for col in db_item.__table__.columns:
             if col.name != "id":
                 obj[col.name] = getattr(db_item, col.name)
+                
+        # Add metafields
+        created_val = getattr(db_item, "created_at", None) or getattr(db_item, "quotedAt", None)
+        if created_val and isinstance(created_val, datetime):
+            obj["_created"] = created_val.isoformat() + "Z"
+        
+        changed_val = getattr(db_item, "updated_at", None) or created_val
+        if changed_val and isinstance(changed_val, datetime):
+            obj["_changed"] = changed_val.isoformat() + "Z"
+            
+        obj["_version"] = 0
+        
         return obj
     except IntegrityError as e:
         logger.warning(f"Integrity error in PUT /rest/{collection}/{item_id}: {e}")
@@ -518,7 +684,7 @@ async def put_collection_item(
 async def patch_collection_item(
     item_id: str,
     request: Request,
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -527,6 +693,9 @@ async def patch_collection_item(
         model = get_model_by_collection(collection)
         if not model:
             raise HTTPException(status_code=404, detail=f"Collection '{collection}' not found")
+        
+        if not item_id.isdigit():
+            raise HTTPException(status_code=400, detail=f"Invalid item ID: {item_id}. ID must be an integer.")
         
         body = await request.json()
         
@@ -538,16 +707,30 @@ async def patch_collection_item(
             raise HTTPException(status_code=404, detail=f"Document not found: {item_id}")
         
         # Update only provided fields
+        columns = db_item.__table__.columns.keys()
         for key, value in body.items():
-            if hasattr(db_item, key) and key != "id":
+            if key in columns and key != "id":
                 setattr(db_item, key, value)
         
         await session.commit()
+        await session.refresh(db_item)
         
         obj = {"_id": str(db_item.id)}
         for col in db_item.__table__.columns:
             if col.name != "id":
                 obj[col.name] = getattr(db_item, col.name)
+                
+        # Add metafields
+        created_val = getattr(db_item, "created_at", None) or getattr(db_item, "quotedAt", None)
+        if created_val and isinstance(created_val, datetime):
+            obj["_created"] = created_val.isoformat() + "Z"
+        
+        changed_val = getattr(db_item, "updated_at", None) or created_val
+        if changed_val and isinstance(changed_val, datetime):
+            obj["_changed"] = changed_val.isoformat() + "Z"
+            
+        obj["_version"] = 0
+        
         return obj
     except IntegrityError as e:
         logger.warning(f"Integrity error in PATCH /rest/{collection}/{item_id}: {e}")
@@ -564,7 +747,7 @@ async def patch_collection_item(
 @app.delete("/rest/{collection}/*")
 @app.delete("/{collection}/*")
 async def delete_collection_bulk(
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     request: Request = None,
     _: Any = Depends(check_api_key),
@@ -595,17 +778,39 @@ async def delete_collection_bulk(
         # Delete by ID list in body
         else:
             try:
-                body = await request.json()
+                body_bytes = await request.body()
+                if not body_bytes:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Delete body is empty. To delete all items, a query must be provided."
+                    )
+                
+                body = json.loads(body_bytes)
                 if isinstance(body, list):
+                    valid_ids = []
                     for item_id in body:
-                        stmt = sql_delete(model).where(model.id == int(item_id))
+                        try:
+                            valid_ids.append(int(item_id))
+                        except ValueError:
+                            raise HTTPException(
+                                status_code=400, 
+                                detail=f"Invalid ID format in list: {item_id}"
+                            )
+                    
+                    if valid_ids:
+                        stmt = sql_delete(model).where(model.id.in_(valid_ids))
                         result = await session.execute(stmt)
-                        deleted_count += result.rowcount
-            except Exception:
-                # Body is empty or invalid JSON -> Delete all documents
-                stmt = sql_delete(model)
-                result = await session.execute(stmt)
-                deleted_count = result.rowcount
+                        deleted_count = result.rowcount
+                else:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Request body must be a list of IDs for bulk delete."
+                    )
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid JSON in request body."
+                )
         
         await session.commit()
         return {"deleted": deleted_count}
@@ -621,7 +826,7 @@ async def delete_collection_bulk(
 @app.delete("/{collection}/{item_id}")
 async def delete_collection_item(
     item_id: str,
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     request: Request = None,
     _: Any = Depends(check_api_key),
@@ -631,6 +836,9 @@ async def delete_collection_item(
     try:
         if item_id == "*":
             return await delete_collection_bulk(collection, q=q, request=request, _=_, session=session)
+
+        if not item_id.isdigit():
+            raise HTTPException(status_code=400, detail=f"Invalid item ID: {item_id}. ID must be an integer.")
 
         model = get_model_by_collection(collection)
         if not model:
