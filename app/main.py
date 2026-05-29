@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, Path
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_, text, inspect
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -129,7 +130,6 @@ class QueueItem(BaseModel):
 # FastAPI app
 app = FastAPI(title="restdb.io compatibility proxy (MariaDB backend)")
 
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
