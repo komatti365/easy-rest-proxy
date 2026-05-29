@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, Path
 from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -281,21 +281,18 @@ async def health_check(session: AsyncSession = Depends(get_session)):
 # ============================================================
 
 def get_model_by_collection(collection: str):
-    """Return the model class for a collection name."""
-    models = {
-        "queue": Queue, 
-        "requests": RequestModel, 
-        "quote": Quote, 
-        "config": Config, 
-        "nowplaying": NowPlaying,
-        "video_info_cache": VideoInfoCache
-    }
-    return models.get(collection)
+    """Return the model class for a collection name dynamically from SQLAlchemy models."""
+    for mapper in Base.registry.mappers:
+        cls = mapper.class_
+        if getattr(cls, "__tablename__", None) == collection:
+            return cls
+    return None
 
 
 @app.get("/rest/{collection}")
+@app.get("/{collection}")
 async def get_collection(
-    collection: str,
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     h: Optional[str] = None,
     _: Any = Depends(check_api_key),
@@ -369,9 +366,10 @@ async def get_collection(
 
 
 @app.get("/rest/{collection}/{item_id}")
+@app.get("/{collection}/{item_id}")
 async def get_collection_item(
-    collection: str,
     item_id: str,
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -401,9 +399,10 @@ async def get_collection_item(
 
 
 @app.post("/rest/{collection}", status_code=201)
+@app.post("/{collection}", status_code=201)
 async def post_collection(
-    collection: str,
     request: Request,
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -467,10 +466,11 @@ async def post_collection(
 
 
 @app.put("/rest/{collection}/{item_id}")
+@app.put("/{collection}/{item_id}")
 async def put_collection_item(
-    collection: str,
     item_id: str,
     request: Request,
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -514,10 +514,11 @@ async def put_collection_item(
 
 
 @app.patch("/rest/{collection}/{item_id}")
+@app.patch("/{collection}/{item_id}")
 async def patch_collection_item(
-    collection: str,
     item_id: str,
     request: Request,
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -561,8 +562,9 @@ async def patch_collection_item(
 
 
 @app.delete("/rest/{collection}/*")
+@app.delete("/{collection}/*")
 async def delete_collection_bulk(
-    collection: str,
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     request: Request = None,
     _: Any = Depends(check_api_key),
@@ -616,9 +618,10 @@ async def delete_collection_bulk(
 
 
 @app.delete("/rest/{collection}/{item_id}")
+@app.delete("/{collection}/{item_id}")
 async def delete_collection_item(
-    collection: str,
     item_id: str,
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     request: Request = None,
     _: Any = Depends(check_api_key),
@@ -699,202 +702,4 @@ async def get_collection_meta(
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-# Backward compatibility: old endpoints for queue/requests
-# These now use the generic REST endpoints internally
 
-@app.get("/queue")
-async def get_queue_compat(
-    q: Optional[str] = None,
-    h: Optional[str] = None,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """GET /queue - backward compatibility for /rest/queue"""
-    return await get_collection("queue", q=q, h=h, _=_, session=session)
-
-
-@app.post("/queue", status_code=201)
-async def post_queue_compat(
-    request: Request,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """POST /queue - backward compatibility for /rest/queue"""
-    return await post_collection("queue", request=request, _=_, session=session)
-
-
-@app.delete("/queue/{item_id}")
-async def delete_queue_compat(
-    item_id: str,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """DELETE /queue/{item_id} - backward compatibility for /rest/queue/{item_id}"""
-    return await delete_collection_item("queue", item_id, _=_, session=session)
-
-
-@app.get("/requests")
-async def get_requests_compat(
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """GET /requests - backward compatibility for /rest/requests"""
-    return await get_collection("requests", q=None, h=None, _=_, session=session)
-
-
-@app.post("/requests", status_code=201)
-async def post_requests_compat(
-    request: Request,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """POST /requests - backward compatibility for /rest/requests"""
-    return await post_collection("requests", request=request, _=_, session=session)
-
-
-@app.delete("/requests/*")
-async def delete_requests_bulk_compat(
-    q: Optional[str] = None,
-    request: Request = None,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """DELETE /requests/* - backward compatibility for /rest/requests/*"""
-    return await delete_collection_bulk("requests", q=q, request=request, _=_, session=session)
-
-
-@app.get("/quote")
-async def get_quote_compat(
-    q: Optional[str] = None,
-    h: Optional[str] = None,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """GET /quote - backward compatibility for /rest/quote"""
-    return await get_collection("quote", q=q, h=h, _=_, session=session)
-
-
-@app.post("/quote", status_code=201)
-async def post_quote_compat(
-    request: Request,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """POST /quote - backward compatibility for /rest/quote"""
-    return await post_collection("quote", request=request, _=_, session=session)
-
-
-@app.delete("/quote/{item_id}")
-async def delete_quote_compat(
-    item_id: str,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """DELETE /quote/{item_id} - backward compatibility for /rest/quote/{item_id}"""
-    return await delete_collection_item("quote", item_id, _=_, session=session)
-
-
-@app.get("/config")
-async def get_config_compat(
-    q: Optional[str] = None,
-    h: Optional[str] = None,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """GET /config - backward compatibility for /rest/config"""
-    return await get_collection("config", q=q, h=h, _=_, session=session)
-
-
-@app.post("/config", status_code=201)
-async def post_config_compat(
-    request: Request,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """POST /config - backward compatibility for /rest/config"""
-    return await post_collection("config", request=request, _=_, session=session)
-
-
-@app.put("/config/{item_id}")
-async def put_config_compat(
-    item_id: str,
-    request: Request,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """PUT /config/{item_id} - backward compatibility for /rest/config/{item_id}"""
-    return await put_collection_item("config", item_id, request=request, _=_, session=session)
-
-
-@app.patch("/config/{item_id}")
-async def patch_config_compat(
-    item_id: str,
-    request: Request,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """PATCH /config/{item_id} - backward compatibility for /rest/config/{item_id}"""
-    return await patch_collection_item("config", item_id, request=request, _=_, session=session)
-
-
-@app.delete("/config/{item_id}")
-async def delete_config_compat(
-    item_id: str,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """DELETE /config/{item_id} - backward compatibility for /rest/config/{item_id}"""
-    return await delete_collection_item("config", item_id, _=_, session=session)
-
-
-@app.get("/nowplaying")
-async def get_nowplaying_compat(
-    q: Optional[str] = None,
-    h: Optional[str] = None,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """GET /nowplaying - backward compatibility for /rest/nowplaying"""
-    return await get_collection("nowplaying", q=q, h=h, _=_, session=session)
-
-
-@app.post("/nowplaying", status_code=201)
-async def post_nowplaying_compat(
-    request: Request,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """POST /nowplaying - backward compatibility for /rest/nowplaying"""
-    return await post_collection("nowplaying", request=request, _=_, session=session)
-
-
-@app.put("/nowplaying/{item_id}")
-async def put_nowplaying_compat(
-    item_id: str,
-    request: Request,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """PUT /nowplaying/{item_id} - backward compatibility for /rest/nowplaying/{item_id}"""
-    return await put_collection_item("nowplaying", item_id, request=request, _=_, session=session)
-
-
-@app.patch("/nowplaying/{item_id}")
-async def patch_nowplaying_compat(
-    item_id: str,
-    request: Request,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """PATCH /nowplaying/{item_id} - backward compatibility for /rest/nowplaying/{item_id}"""
-    return await patch_collection_item("nowplaying", item_id, request=request, _=_, session=session)
-
-
-@app.delete("/nowplaying/{item_id}")
-async def delete_nowplaying_compat(
-    item_id: str,
-    _: Any = Depends(check_api_key),
-    session: AsyncSession = Depends(get_session),
-):
-    """DELETE /nowplaying/{item_id} - backward compatibility for /rest/nowplaying/{item_id}"""
-    return await delete_collection_item("nowplaying", item_id, _=_, session=session)
