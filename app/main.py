@@ -342,7 +342,7 @@ def get_model_by_collection(collection: str):
 @app.get("/rest/{collection}")
 @app.get("/{collection}")
 async def get_collection(
-    collection: str = Path(..., pattern="^[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     h: Optional[str] = None,
     sort: Optional[str] = None,
