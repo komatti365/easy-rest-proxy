@@ -575,6 +575,8 @@ async def post_collection(
             db_items.append(db_item)
         
         await session.commit()
+        for db_item in db_items:
+            await session.refresh(db_item)
         
         # Return created items with IDs
         created = []
