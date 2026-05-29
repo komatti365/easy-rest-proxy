@@ -292,7 +292,7 @@ def get_model_by_collection(collection: str):
 @app.get("/rest/{collection}")
 @app.get("/{collection}")
 async def get_collection(
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     h: Optional[str] = None,
     _: Any = Depends(check_api_key),
@@ -369,7 +369,7 @@ async def get_collection(
 @app.get("/{collection}/{item_id}")
 async def get_collection_item(
     item_id: str,
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -402,7 +402,7 @@ async def get_collection_item(
 @app.post("/{collection}", status_code=201)
 async def post_collection(
     request: Request,
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -470,7 +470,7 @@ async def post_collection(
 async def put_collection_item(
     item_id: str,
     request: Request,
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -518,7 +518,7 @@ async def put_collection_item(
 async def patch_collection_item(
     item_id: str,
     request: Request,
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
     _: Any = Depends(check_api_key),
     session: AsyncSession = Depends(get_session),
 ):
@@ -564,7 +564,7 @@ async def patch_collection_item(
 @app.delete("/rest/{collection}/*")
 @app.delete("/{collection}/*")
 async def delete_collection_bulk(
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     request: Request = None,
     _: Any = Depends(check_api_key),
@@ -621,7 +621,7 @@ async def delete_collection_bulk(
 @app.delete("/{collection}/{item_id}")
 async def delete_collection_item(
     item_id: str,
-    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest)[a-zA-Z0-9_-]+$"),
+    collection: str = Path(..., pattern="^(?!health|docs|redoc|openapi\\.json|rest|_meta)[a-zA-Z0-9_-]+$"),
     q: Optional[str] = None,
     request: Request = None,
     _: Any = Depends(check_api_key),
