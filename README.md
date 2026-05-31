@@ -208,9 +208,9 @@ Docker Compose を使用した場合、自動的に phpMyAdmin が起動しま�
 curl http://localhost:8888/health
 
 
-成功時のレスポンス: {"status":"ok","redis":"connected"}
+成功時のレスポンス: {"status":"ok","database":"connected"}
 
-エラー時のレスポンス: {"status":"error","redis":"failed","error":"..."}
+エラー時のレスポンス: {"status":"error","database":"failed","error":"..."}
 
 トラブルシューティング
 ```
