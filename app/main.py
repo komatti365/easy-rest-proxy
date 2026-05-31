@@ -5,13 +5,14 @@ import traceback
 import asyncio
 from datetime import datetime
 from typing import Any, Dict, Optional
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status, Path
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, select, delete as sql_delete, func, and_, or_, text, inspect
+from sqlalchemy import String, DateTime, select, delete as sql_delete, func, and_, or_, text, inspect
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.exc import IntegrityError
 from dotenv import load_dotenv
 
@@ -51,74 +52,76 @@ if not DATABASE_URL:
 # SQLAlchemy setup
 engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-Base = declarative_base()
+
+
+# SQLAlchemy 2.0 Base Class
+class Base(DeclarativeBase):
+    pass
 
 
 # Models
 class Queue(Base):
     __tablename__ = "queue"
     
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    videoId = Column(String(255), nullable=False)
-    priority = Column(Boolean, default=False, nullable=False)
-    title = Column(String(1024), nullable=True)
-    thumbnailUrl = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    videoId: Mapped[str] = mapped_column(String(255), nullable=False)
+    priority: Mapped[bool] = mapped_column(default=False, nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    thumbnailUrl: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
 
 
 class RequestModel(Base):
     __tablename__ = "requests"
     
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    videoId = Column(String(255), nullable=False)
-    title = Column(String(1024), nullable=True)
-    thumbnailUrl = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    videoId: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    thumbnailUrl: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
 
 
 class Quote(Base):
     __tablename__ = "quote"
     
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    videoId = Column(String(255), nullable=False)
-    liveId = Column(String(255), nullable=False)
-    title = Column(String(1024), nullable=True)
-    thumbnailUrl = Column(String(1024), nullable=True)
-    quotedAt = Column(DateTime, default=func.now(), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    videoId: Mapped[str] = mapped_column(String(255), nullable=False)
+    liveId: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    thumbnailUrl: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    quotedAt: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
 
 
 class Config(Base):
     __tablename__ = "config"
     
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    key = Column(String(255), nullable=False, unique=True)
-    value = Column(String(2048), nullable=True)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    value: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class NowPlaying(Base):
     __tablename__ = "nowplaying"
     
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    videoId = Column(String(255), nullable=True)
-    title = Column(String(1024), nullable=True)
-    duration = Column(Integer, nullable=True)
-    remainingTime = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    videoId: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    title: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    duration: Mapped[Optional[int]] = mapped_column(nullable=True)
+    remainingTime: Mapped[Optional[int]] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class VideoInfoCache(Base):
     __tablename__ = "video_info_cache"
     
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    videoId = Column(String(255), nullable=False, unique=True)
-    title = Column(String(1024), nullable=True)
-    thumbnailUrl = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-
-
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    videoId: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    title: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    thumbnailUrl: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
 
 
 # Pydantic models
@@ -127,14 +130,76 @@ class QueueItem(BaseModel):
     priority: Optional[bool] = False
 
 
+# Lifespan context manager for FastAPI
+MAX_DB_INIT_RETRIES = int(os.getenv("DB_INIT_RETRIES", "10"))
+DB_INIT_RETRY_DELAY = float(os.getenv("DB_INIT_RETRY_DELAY", "3"))
+
+async def migrate_database(conn):
+    """queue, requests, quote テーブルに title と thumbnailUrl カラムがあるか確認し、なければ追加する"""
+    def check_and_add_columns(connection):
+        inspector = inspect(connection)
+        for table_name in ["queue", "requests", "quote"]:
+            if not inspector.has_table(table_name):
+                continue
+            
+            columns = [col["name"] for col in inspector.get_columns(table_name)]
+            
+            if "title" not in columns:
+                logger.info(f"Adding column 'title' to table '{table_name}'")
+                connection.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `title` VARCHAR(1024) NULL"))
+                
+            if "thumbnailUrl" not in columns:
+                logger.info(f"Adding column 'thumbnailUrl' to table '{table_name}'")
+                connection.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `thumbnailUrl` VARCHAR(1024) NULL"))
+
+    try:
+        await conn.run_sync(check_and_add_columns)
+    except Exception as e:
+        logger.warning(f"Failed to migrate tables: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Database initialization and cleanup on startup/shutdown."""
+    logger.info(f"Attempting to connect to database at {DB_HOST}:{DB_PORT}/{DB_NAME}")
+    for attempt in range(1, MAX_DB_INIT_RETRIES + 1):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                # 自動マイグレーションの実行
+                await migrate_database(conn)
+            logger.info("Database tables created/verified/migrated successfully")
+            break
+        except Exception as e:
+            logger.warning(
+                f"Database initialization attempt {attempt}/{MAX_DB_INIT_RETRIES} failed: {e}"
+            )
+            logger.debug(f"Startup error details:\n{traceback.format_exc()}")
+            if attempt == MAX_DB_INIT_RETRIES:
+                logger.error(
+                    "Database initialization failed after maximum retries. Aborting startup."
+                )
+                raise
+            await asyncio.sleep(DB_INIT_RETRY_DELAY)
+            
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down database engine...")
+    await engine.dispose()
+
+
 # FastAPI app
-app = FastAPI(title="restdb.io compatibility proxy (MariaDB backend)")
+app = FastAPI(
+    title="restdb.io compatibility proxy (MariaDB backend)",
+    lifespan=lifespan
+)
 
-
+# CORS setup with ALLOWED_ORIGINS environment variable support
+ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False if "*" in ALLOWED_ORIGINS else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -181,7 +246,12 @@ async def check_api_key(
                 detail="Write operations are not allowed with a read-only API key"
             )
             
-    # 3. どちらのキーも一致しない、もしくはキーが指定されていない場合 (セキュリティ強化)\n    if PROXY_API_KEY or PROXY_READONLY_API_KEY:\n        raise HTTPException(\n            status_code=status.HTTP_403_FORBIDDEN, \n            detail="Invalid or missing API key"\n        )
+    # 3. どちらのキーも一致しない、もしくはキーが指定されていない場合 (セキュリティ強化)
+    if PROXY_API_KEY or PROXY_READONLY_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Invalid or missing API key"
+        )
 
 
 # Utility: Parse MongoDB-like query
@@ -262,58 +332,6 @@ def build_filter(query: Dict[str, Any], model) -> Any:
             filters.append(field == condition)
     
     return and_(*filters) if filters else None
-
-
-# Events
-MAX_DB_INIT_RETRIES = int(os.getenv("DB_INIT_RETRIES", "10"))
-DB_INIT_RETRY_DELAY = float(os.getenv("DB_INIT_RETRY_DELAY", "3"))
-
-async def migrate_database(conn):
-    """queue, requests, quote テーブルに title と thumbnailUrl カラムがあるか確認し、なければ追加する"""
-    def check_and_add_columns(connection):
-        inspector = inspect(connection)
-        for table_name in ["queue", "requests", "quote"]:
-            if not inspector.has_table(table_name):
-                continue
-            
-            columns = [col["name"] for col in inspector.get_columns(table_name)]
-            
-            if "title" not in columns:
-                logger.info(f"Adding column 'title' to table '{table_name}'")
-                connection.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `title` VARCHAR(1024) NULL"))
-                
-            if "thumbnailUrl" not in columns:
-                logger.info(f"Adding column 'thumbnailUrl' to table '{table_name}'")
-                connection.execute(text(f"ALTER TABLE `{table_name}` ADD COLUMN `thumbnailUrl` VARCHAR(1024) NULL"))
-
-    try:
-        await conn.run_sync(check_and_add_columns)
-    except Exception as e:
-        logger.warning(f"Failed to migrate tables: {e}")
-
-@app.on_event("startup")
-async def startup_event():
-    """Create tables on startup, retrying until the database is ready."""
-    logger.info(f"Attempting to connect to database at {DB_HOST}:{DB_PORT}/{DB_NAME}")
-    for attempt in range(1, MAX_DB_INIT_RETRIES + 1):
-        try:
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-                # 自動マイグレーションの実行
-                await migrate_database(conn)
-            logger.info("Database tables created/verified/migrated successfully")
-            return
-        except Exception as e:
-            logger.warning(
-                f"Database initialization attempt {attempt}/{MAX_DB_INIT_RETRIES} failed: {e}"
-            )
-            logger.debug(f"Startup error details:\n{traceback.format_exc()}")
-            if attempt == MAX_DB_INIT_RETRIES:
-                logger.error(
-                    "Database initialization failed after maximum retries. Aborting startup."
-                )
-                raise
-            await asyncio.sleep(DB_INIT_RETRY_DELAY)
 
 
 # Health check
