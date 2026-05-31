@@ -124,6 +124,28 @@ class VideoInfoCache(Base):
     created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
 
 
+class PickupQueue(Base):
+    __tablename__ = "pickup_queue"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    videoId: Mapped[str] = mapped_column(String(255), nullable=False)
+    priority: Mapped[bool] = mapped_column(default=False, nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    thumbnailUrl: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
+
+
+class BackupQueue(Base):
+    __tablename__ = "backup_queue"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    videoId: Mapped[str] = mapped_column(String(255), nullable=False)
+    priority: Mapped[bool] = mapped_column(default=False, nullable=False)
+    title: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    thumbnailUrl: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
+
+
 # Pydantic models
 class QueueItem(BaseModel):
     videoId: str
@@ -135,10 +157,10 @@ MAX_DB_INIT_RETRIES = int(os.getenv("DB_INIT_RETRIES", "10"))
 DB_INIT_RETRY_DELAY = float(os.getenv("DB_INIT_RETRY_DELAY", "3"))
 
 async def migrate_database(conn):
-    """queue, requests, quote テーブルに title と thumbnailUrl カラムがあるか確認し、なければ追加する"""
+    """queue, requests, quote, pickup_queue, backup_queue テーブルに title と thumbnailUrl カラムがあるか確認し、なければ追加する"""
     def check_and_add_columns(connection):
         inspector = inspect(connection)
-        for table_name in ["queue", "requests", "quote"]:
+        for table_name in ["queue", "requests", "quote", "pickup_queue", "backup_queue"]:
             if not inspector.has_table(table_name):
                 continue
             
